@@ -3,6 +3,12 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+# JetBrains IDEs
+.idea/
+*.iml
+*.ipr
+*.iws
+
 # C extensions
 *.so
 
