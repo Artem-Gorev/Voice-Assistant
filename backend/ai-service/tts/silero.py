@@ -28,7 +28,7 @@ class SileroSynthesizer(SpeechSynthesizer):
 
             try:
                 torch.set_num_threads(self._config.torch_threads)
-                self._logger.info(f"Загрузка модели Silero TTS '{self._config.model_id}'")
+                self._logger.info(f"[TTS]: Загрузка модели Silero TTS '{self._config.model_id}'")
 
                 with warnings.catch_warnings():
                     warnings.filterwarnings("ignore", message="TypedStorage is deprecated", category=UserWarning)
@@ -58,8 +58,8 @@ class SileroSynthesizer(SpeechSynthesizer):
             raise
 
         except Exception as error:
-            self._logger.exception(f"Ошибка синтеза Silero: {error}")
-            raise RuntimeError(f"Ошибка синтеза Silero: {error}")
+            self._logger.exception(f"[TTS]: Ошибка синтеза Silero: {error}")
+            raise RuntimeError(f"[TTS]: Ошибка синтеза Silero: {error}")
 
         samples = tensor.detach().cpu().numpy().astype(np.float32, copy=False).squeeze()
         if samples.ndim != 1 or samples.size == 0 or not np.isfinite(samples).all():
@@ -67,6 +67,6 @@ class SileroSynthesizer(SpeechSynthesizer):
 
         processing_time = perf_counter() - started
         duration = len(samples) / self._config.sample_rate
-        self._logger.info(f"Silero создала {duration:.2f} сек. аудио за {processing_time:.2f} сек.")
+        self._logger.info(f"[TTS]: Silero создала {duration:.2f} сек. аудио за {processing_time:.2f} сек.")
         return SpeechAudio(samples=samples, sample_rate=self._config.sample_rate, model_name="Silero TTS v5_ru",
                            processing_time_seconds=processing_time, voice=self._config.voice)

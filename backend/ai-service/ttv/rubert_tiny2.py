@@ -46,7 +46,7 @@ class RuBertTiny2Vectorizer(TextVectorizer):
                 self._device = self._resolve_device()
                 load_options = {"cache_dir": self._config.cache_dir,
                                 "local_files_only": self._config.local_files_only}
-                self._logger.info(f"Загрузка модели преобразования текста '{self._config.model_id}'")
+                self._logger.info(f"[TTV]: Загрузка модели преобразования текста '{self._config.model_id}'")
                 self._tokenizer = AutoTokenizer.from_pretrained(self._config.model_id, **load_options)
 
                 self._model = AutoModel.from_pretrained(self._config.model_id, **load_options)
@@ -100,12 +100,12 @@ class RuBertTiny2Vectorizer(TextVectorizer):
             raise
 
         except Exception as error:
-            self._logger.exception(f"Ошибка векторизации RuBERT: {error}")
-            raise RuntimeError(f"Ошибка векторизации RuBERT: {error}")
+            self._logger.exception(f"[TTV]: Ошибка векторизации RuBERT: {error}")
+            raise RuntimeError(f"[TTV]: Ошибка векторизации RuBERT: {error}")
 
         vectors = np.concatenate(encoded_batches, axis=0)
         processing_time = perf_counter() - started
-        self._logger.info(f"RuBERT обработала {len(values)} текстов за {processing_time:.3f} сек.")
+        self._logger.info(f"[TTV]: RuBERT обработала {len(values)} текстов за {processing_time:.3f} сек.")
         return TextVectors(vectors=vectors, texts=values, processing_time_seconds=processing_time,
                            model_name="cointegrated/rubert-tiny2")
 

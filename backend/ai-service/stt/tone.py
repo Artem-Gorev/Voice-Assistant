@@ -27,7 +27,7 @@ class TOneRecognizer(SpeechRecognizer):
 
             try:
                 decoder_type = DecoderType.GREEDY if self._config.decoder == "greedy" else DecoderType.BEAM_SEARCH
-                self._logger.info(f"Загрузка модели T-one '{self._config.model_id}'")
+                self._logger.info(f"[STT]: Загрузка модели T-one '{self._config.model_id}'")
                 self._pipeline = StreamingCTCPipeline.from_hugging_face(decoder_type=decoder_type)
 
             except Exception as error:
@@ -48,8 +48,8 @@ class TOneRecognizer(SpeechRecognizer):
             raise
 
         except Exception as error:
-            self._logger.exception(f"Ошибка распознавания T-one: {error}")
-            raise RuntimeError(f"Ошибка распознавания T-one: {error}")
+            self._logger.exception(f"[STT]: Ошибка распознавания T-one: {error}")
+            raise RuntimeError(f"[STT]: Ошибка распознавания T-one: {error}")
 
         segments = tuple(TranscriptionSegment(text=phrase.text.strip(), start_seconds=float(phrase.start_time),
                          end_seconds=float(phrase.end_time)) for phrase in phrases if phrase.text.strip())
@@ -59,7 +59,7 @@ class TOneRecognizer(SpeechRecognizer):
             raise RuntimeError("Речь не распознана. Говорите ближе к микрофону и повторите попытку")
 
         processing_time = perf_counter() - started
-        self._logger.info(f"T-one обработала {duration:.2f} сек. аудио за {processing_time:.2f} сек.")
+        self._logger.info(f"[STT]: T-one обработала {duration:.2f} сек. аудио за {processing_time:.2f} сек.")
         return Transcription(text=text, segments=segments, audio_duration_seconds=duration, processing_time_seconds=processing_time,
                              model_name="T-one", sample_rate=self._config.target_sample_rate)
 
