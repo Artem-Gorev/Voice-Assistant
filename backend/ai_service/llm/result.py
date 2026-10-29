@@ -1,14 +1,14 @@
 from datetime import date, datetime
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class CreateEventData(BaseModel):
     title: str = Field(min_length=1)
     start_time: str = Field(description="Strict ISO 8601 format (YYYY-MM-DDTHH:MM:SS)")
-    end_time: Optional[str] = Field(default=None, description="Strict ISO 8601 format (YYYY-MM-DDTHH:MM:SS)")
-    category: Optional[str] = "Другое"
-    description: Optional[str] = None
+    end_time: str | None = Field(default=None, description="Strict ISO 8601 format (YYYY-MM-DDTHH:MM:SS)")
+    category: str | None = "Другое"
+    description: str | None = None
 
     @field_validator("title")
     @classmethod
@@ -29,7 +29,7 @@ class CreateEventData(BaseModel):
 
     @field_validator("end_time")
     @classmethod
-    def validate_end_time(cls, v: Optional[str]) -> Optional[str]:
+    def validate_end_time(cls, v: str | None) -> str | None:
         if v is not None:
             try:
                 datetime.fromisoformat(v)
@@ -62,8 +62,8 @@ class ListEventsData(BaseModel):
 
 class SearchEventsData(BaseModel):
     query: str = Field(min_length=1)
-    date_from: Optional[str] = None
-    date_to: Optional[str] = None
+    date_from: str | None = None
+    date_to: str | None = None
 
     @field_validator("query")
     @classmethod
@@ -76,16 +76,16 @@ class SearchEventsData(BaseModel):
 
 class ClarifyData(BaseModel):
     missing_field: str = Field(description="Name of the missing field, e.g., 'start_time'")
-    partial_data: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    partial_data: dict[str, Any] | None = Field(default_factory=dict)
 
 
-class LLMResponseSchema(BaseModel):
+class LLMResult(BaseModel):
     action: Literal["create_event", "list_events", "search_events", "clarify", "chat"]
-    data: Dict[str, Any]
-    reply_text: Optional[str] = None
+    data: dict[str, Any]
+    reply_text: str | None = None
 
     @model_validator(mode="after")
-    def validate_action_data(self) -> "LLMResponseSchema":
+    def validate_action_data(self) -> "LLMResult":
         action_map = {
             "create_event": CreateEventData,
             "list_events": ListEventsData,
@@ -99,3 +99,6 @@ class LLMResponseSchema(BaseModel):
             if not isinstance(self.data, dict):
                 self.data = {}
         return self
+
+
+LLMResponseSchema = LLMResult

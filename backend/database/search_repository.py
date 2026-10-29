@@ -1,9 +1,9 @@
-from typing import Any, Dict, List
+from typing import Any
 import psycopg2
 from backend.database.etl_migration import DB_CONFIG
 
 
-def search_events_by_vector(query_vector: List[float], limit: int = 5) -> List[Dict[str, Any]]:
+def search_events_by_vector(query_vector: list[float], limit: int = 5) -> list[dict[str, Any]]:
     conn = psycopg2.connect(**DB_CONFIG)
     cur = conn.cursor()
 

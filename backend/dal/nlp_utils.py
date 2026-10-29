@@ -1,5 +1,4 @@
 import re
-from typing import Optional
 
 import pymorphy3
 MORPH = pymorphy3.MorphAnalyzer()
@@ -11,7 +10,7 @@ MEETING_TRIGGERS = [
 ]
 
 
-def lemmatize_text(text: Optional[str]) -> str:
+def lemmatize_text(text: str | None) -> str:
     if not isinstance(text, str) or not text.strip():
         return ""
 
@@ -28,7 +27,7 @@ def lemmatize_text(text: Optional[str]) -> str:
     return " ".join(words)
 
 
-def classify_event(text: Optional[str]) -> str:
+def classify_event(text: str | None) -> str:
     if not isinstance(text, str):
         return "task"
 

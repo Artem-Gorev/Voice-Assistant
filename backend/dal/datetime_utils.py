@@ -1,8 +1,8 @@
 from datetime import date, time, datetime
-from typing import Optional, Any, Union
+from typing import Any
 
 
-def _normalize_date(val: Union[date, str, datetime, None]) -> Optional[date]:
+def _normalize_date(val: date | str | datetime | None) -> date | None:
     if val is None:
         return None
     if isinstance(val, date) and not isinstance(val, datetime):
@@ -14,7 +14,7 @@ def _normalize_date(val: Union[date, str, datetime, None]) -> Optional[date]:
     return val
 
 
-def _normalize_time(val: Union[time, str, datetime, None]) -> Optional[time]:
+def _normalize_time(val: time | str | datetime | None) -> time | None:
     if val is None:
         return None
     if isinstance(val, time):
@@ -28,7 +28,7 @@ def _normalize_time(val: Union[time, str, datetime, None]) -> Optional[time]:
     return val
 
 
-def _normalize_datetime(val: Union[datetime, date, str, None]) -> Optional[datetime]:
+def _normalize_datetime(val: datetime | date | str | None) -> datetime | None:
     if val is None:
         return None
     if isinstance(val, datetime):
@@ -43,7 +43,7 @@ def _normalize_datetime(val: Union[datetime, date, str, None]) -> Optional[datet
     return None
 
 
-def _extract_date_time(val: Any) -> tuple[Optional[date], Optional[time]]:
+def _extract_date_time(val: Any) -> tuple[date | None, time | None]:
     if val is None:
         return None, None
     if isinstance(val, datetime):

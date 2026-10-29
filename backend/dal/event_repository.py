@@ -1,7 +1,7 @@
 import logging
 import os
 from datetime import date, time, datetime
-from typing import Optional, List, Dict, Any, Union
+from typing import Any
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
@@ -12,7 +12,7 @@ from backend.dal.nlp_utils import lemmatize_text, classify_event
 class EventRepository:
     DEFAULT_DSN = "postgresql://assistant_user:assistant_pass@localhost:5432/assistant_db"
 
-    def __init__(self, connection=None, dsn: Optional[str] = None, logger=None, **kwargs):
+    def __init__(self, connection=None, dsn: str | None = None, logger=None, **kwargs):
         self._logger = logger or logging.getLogger(self.__class__.__module__)
 
         conn = connection or kwargs.get("conn")
@@ -40,7 +40,7 @@ class EventRepository:
             self._logger.info(f"[DAL]: Ошибка получения курсора: {e}")
             raise
 
-    def _format_row(self, row: Any, description: Optional[Any] = None) -> Optional[dict]:
+    def _format_row(self, row: Any, description: Any | None = None) -> dict[str, Any] | None:
         self._logger.info("[DAL]: Форматирование строки события")
         if row is None:
             return None
@@ -89,7 +89,8 @@ class EventRepository:
 
     _map_row = _format_row
 
-    def get_next_event(self, target_date: Union[date, str], target_time: Union[time, str, datetime]) -> Optional[dict]:
+    def get_next_event(self, target_date: date | str,
+                       target_time: time | str | datetime) -> dict[str, Any] | None:
         self._logger.info("[DAL]: Запрос на получение следующего события")
         t_date = _normalize_date(target_date)
         t_time = _normalize_time(target_time)
@@ -110,8 +111,8 @@ class EventRepository:
             self._logger.info(f"[DAL]: Ошибка при получении следующего события: {e}")
             raise
 
-    def get_previous_event(self, target_date: Union[date, str],
-                           target_time: Union[time, str, datetime]) -> Optional[dict]:
+    def get_previous_event(self, target_date: date | str,
+                           target_time: time | str | datetime) -> dict[str, Any] | None:
         self._logger.info("[DAL]: Запрос на получение предыдущего события")
         t_date = _normalize_date(target_date)
         t_time = _normalize_time(target_time)
@@ -132,7 +133,7 @@ class EventRepository:
             self._logger.info(f"[DAL]: Ошибка при получении предыдущего события: {e}")
             raise
 
-    def get_events_by_date(self, target_date: Union[date, str]) -> List[dict]:
+    def get_events_by_date(self, target_date: date | str) -> list[dict[str, Any]]:
         self._logger.info("[DAL]: Запрос на получение событий по дате")
         t_date = _normalize_date(target_date)
 
@@ -152,7 +153,8 @@ class EventRepository:
             self._logger.info(f"[DAL]: Ошибка при получении событий по дате: {e}")
             raise
 
-    def get_events_by_date_range(self, start_date: Union[date, str], end_date: Union[date, str]) -> List[dict]:
+    def get_events_by_date_range(self, start_date: date | str,
+                                 end_date: date | str) -> list[dict[str, Any]]:
         self._logger.info("[DAL]: Запрос на получение событий по диапазону дат")
         s_date = _normalize_date(start_date)
         e_date = _normalize_date(end_date)
@@ -173,7 +175,7 @@ class EventRepository:
             self._logger.info(f"[DAL]: Ошибка при получении событий по диапазону дат: {e}")
             raise
 
-    def create_event(self, data: dict) -> None:
+    def create_event(self, data: dict[str, Any]) -> None:
         self._logger.info("[DAL]: Создание нового события")
         raw_text = (
             data.get("original_text")
@@ -246,7 +248,7 @@ class EventRepository:
             self._logger.info(f"[DAL]: Ошибка при создании события: {e}")
             raise
 
-    def get_all_events(self) -> List[Dict[str, Any]]:
+    def get_all_events(self) -> list[dict[str, Any]]:
         self._logger.info("[DAL]: Получение всех событий для семантического анализа")
         query = "SELECT id, text, normalized_text, start_time, embedding FROM events ORDER BY id ASC;"
         try:
