@@ -1,11 +1,8 @@
 import re
-from typing import Optional
 
-try:
-    import pymorphy3
-    _morph = pymorphy3.MorphAnalyzer()
-except Exception:
-    _morph = None
+import pymorphy3
+MORPH = pymorphy3.MorphAnalyzer()
+
 
 MEETING_TRIGGERS = [
     "встреч", "созвон", "демо", "обсудить", "планёрк", "планерк",
@@ -13,7 +10,7 @@ MEETING_TRIGGERS = [
 ]
 
 
-def lemmatize_text(text: Optional[str]) -> str:
+def lemmatize_text(text: str | None) -> str:
     if not isinstance(text, str) or not text.strip():
         return ""
 
@@ -21,16 +18,16 @@ def lemmatize_text(text: Optional[str]) -> str:
     if not words:
         return ""
 
-    if _morph:
+    if MORPH:
         try:
-            return " ".join([_morph.parse(w)[0].normal_form for w in words])
+            return " ".join([MORPH.parse(w)[0].normal_form for w in words])
         except Exception:
             pass
 
     return " ".join(words)
 
 
-def classify_event(text: Optional[str]) -> str:
+def classify_event(text: str | None) -> str:
     if not isinstance(text, str):
         return "task"
 

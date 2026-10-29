@@ -1,60 +1,20 @@
 import logging
 import os
 from datetime import date, time, datetime
-from typing import Optional, List, Dict, Any, Union
+from typing import Any
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
-from backend.dal.datetime_utils import _normalize_date, _normalize_time
+from backend.dal.datetime_utils import _normalize_date, _normalize_time, _normalize_datetime, _extract_date_time
 from backend.dal.nlp_utils import lemmatize_text, classify_event
-
-logging.basicConfig(level=logging.INFO, format="[ %(levelname)s ] %(message)s")
-logger = logging.getLogger("event_repository")
-
-
-def _normalize_datetime(val: Union[datetime, date, str, None]) -> Optional[datetime]:
-    if val is None:
-        return None
-    if isinstance(val, datetime):
-        return val
-    if isinstance(val, date):
-        return datetime.combine(val, time(0, 0))
-    if isinstance(val, str):
-        clean_str = val.strip()
-        if not clean_str:
-            return None
-        return datetime.fromisoformat(clean_str.replace("Z", "+00:00"))
-    return None
-
-
-def _extract_date_time(val: Any) -> tuple[Optional[date], Optional[time]]:
-    if val is None:
-        return None, None
-    if isinstance(val, datetime):
-        t = val.time()
-        if t.tzinfo is not None:
-            t = t.replace(tzinfo=None)
-        return val.date(), t
-    if isinstance(val, date):
-        return val, None
-    if isinstance(val, str):
-        try:
-            dt = datetime.fromisoformat(val.replace("Z", "+00:00"))
-            t = dt.time()
-            if t.tzinfo is not None:
-                t = t.replace(tzinfo=None)
-            return dt.date(), t
-        except Exception as e:
-            logger.info(f"Ошибка при извлечении даты и времени: {e}")
-            raise
-    return None, None
 
 
 class EventRepository:
     DEFAULT_DSN = "postgresql://assistant_user:assistant_pass@localhost:5432/assistant_db"
 
-    def __init__(self, connection=None, dsn: Optional[str] = None, **kwargs):
-        logger.info("Инициализация репозитория событий")
+    def __init__(self, connection=None, dsn: str | None = None, logger=None, **kwargs):
+        self._logger = logger or logging.getLogger(self.__class__.__module__)
+
         conn = connection or kwargs.get("conn")
         if conn is not None:
             self.conn = conn
@@ -63,26 +23,25 @@ class EventRepository:
             try:
                 self.conn = psycopg2.connect(db_url)
             except Exception as e:
-                logger.info(f"Ошибка подключения к базе данных: {e}")
+                self._logger.info(f"[DAL]: Ошибка подключения к базе данных: {e}")
                 raise
 
         try:
             self.conn.autocommit = True
         except Exception as e:
-            logger.info(f"Ошибка при установке autocommit: {e}")
+            self._logger.info(f"[DAL]: Ошибка при установке autocommit: {e}")
             raise
 
     def _get_cursor(self):
-        logger.info("Получение курсора базы данных")
+        self._logger.info("[DAL]: Получение курсора базы данных")
         try:
             return self.conn.cursor(cursor_factory=RealDictCursor)
         except Exception as e:
-            logger.info(f"Ошибка получения курсора: {e}")
+            self._logger.info(f"[DAL]: Ошибка получения курсора: {e}")
             raise
 
-    @staticmethod
-    def _format_row(row: Any, description: Optional[Any] = None) -> Optional[dict]:
-        logger.info("Форматирование строки события")
+    def _format_row(self, row: Any, description: Any | None = None) -> dict[str, Any] | None:
+        self._logger.info("[DAL]: Форматирование строки события")
         if row is None:
             return None
 
@@ -130,10 +89,9 @@ class EventRepository:
 
     _map_row = _format_row
 
-    def get_next_event(
-        self, target_date: Union[date, str], target_time: Union[time, str, datetime]
-    ) -> Optional[dict]:
-        logger.info("Запрос на получение следующего события")
+    def get_next_event(self, target_date: date | str,
+                       target_time: time | str | datetime) -> dict[str, Any] | None:
+        self._logger.info("[DAL]: Запрос на получение следующего события")
         t_date = _normalize_date(target_date)
         t_time = _normalize_time(target_time)
         target_dt = datetime.combine(t_date, t_time)
@@ -150,13 +108,12 @@ class EventRepository:
                 row = cur.fetchone()
                 return self._format_row(row, getattr(cur, "description", None))
         except Exception as e:
-            logger.info(f"Ошибка при получении следующего события: {e}")
+            self._logger.info(f"[DAL]: Ошибка при получении следующего события: {e}")
             raise
 
-    def get_previous_event(
-        self, target_date: Union[date, str], target_time: Union[time, str, datetime]
-    ) -> Optional[dict]:
-        logger.info("Запрос на получение предыдущего события")
+    def get_previous_event(self, target_date: date | str,
+                           target_time: time | str | datetime) -> dict[str, Any] | None:
+        self._logger.info("[DAL]: Запрос на получение предыдущего события")
         t_date = _normalize_date(target_date)
         t_time = _normalize_time(target_time)
         target_dt = datetime.combine(t_date, t_time)
@@ -173,11 +130,11 @@ class EventRepository:
                 row = cur.fetchone()
                 return self._format_row(row, getattr(cur, "description", None))
         except Exception as e:
-            logger.info(f"Ошибка при получении предыдущего события: {e}")
+            self._logger.info(f"[DAL]: Ошибка при получении предыдущего события: {e}")
             raise
 
-    def get_events_by_date(self, target_date: Union[date, str]) -> List[dict]:
-        logger.info("Запрос на получение событий по дате")
+    def get_events_by_date(self, target_date: date | str) -> list[dict[str, Any]]:
+        self._logger.info("[DAL]: Запрос на получение событий по дате")
         t_date = _normalize_date(target_date)
 
         query = (
@@ -193,13 +150,12 @@ class EventRepository:
                 desc = getattr(cur, "description", None)
                 return [self._format_row(r, desc) for r in (rows or [])]
         except Exception as e:
-            logger.info(f"Ошибка при получении событий по дате: {e}")
+            self._logger.info(f"[DAL]: Ошибка при получении событий по дате: {e}")
             raise
 
-    def get_events_by_date_range(
-        self, start_date: Union[date, str], end_date: Union[date, str]
-    ) -> List[dict]:
-        logger.info("Запрос на получение событий по диапазону дат")
+    def get_events_by_date_range(self, start_date: date | str,
+                                 end_date: date | str) -> list[dict[str, Any]]:
+        self._logger.info("[DAL]: Запрос на получение событий по диапазону дат")
         s_date = _normalize_date(start_date)
         e_date = _normalize_date(end_date)
 
@@ -216,11 +172,11 @@ class EventRepository:
                 desc = getattr(cur, "description", None)
                 return [self._format_row(r, desc) for r in (rows or [])]
         except Exception as e:
-            logger.info(f"Ошибка при получении событий по диапазону дат: {e}")
+            self._logger.info(f"[DAL]: Ошибка при получении событий по диапазону дат: {e}")
             raise
 
-    def create_event(self, data: dict) -> None:
-        logger.info("Создание нового события")
+    def create_event(self, data: dict[str, Any]) -> None:
+        self._logger.info("[DAL]: Создание нового события")
         raw_text = (
             data.get("original_text")
             if "original_text" in data and data.get("original_text") is not None
@@ -289,11 +245,11 @@ class EventRepository:
                 cur.execute(query, params)
             self.conn.commit()
         except Exception as e:
-            logger.info(f"Ошибка при создании события: {e}")
+            self._logger.info(f"[DAL]: Ошибка при создании события: {e}")
             raise
 
-    def get_all_events(self) -> List[Dict[str, Any]]:
-        logger.info("Получение всех событий для семантического анализа")
+    def get_all_events(self) -> list[dict[str, Any]]:
+        self._logger.info("[DAL]: Получение всех событий для семантического анализа")
         query = "SELECT id, text, normalized_text, start_time, embedding FROM events ORDER BY id ASC;"
         try:
             with self._get_cursor() as cur:
@@ -313,11 +269,11 @@ class EventRepository:
                         results.append(r)
                 return results
         except Exception as e:
-            logger.info(f"Ошибка при получении всех событий: {e}")
+            self._logger.info(f"[DAL]: Ошибка при получении всех событий: {e}")
             raise
 
     def close(self) -> None:
-        logger.info("Закрытие соединения с базой данных")
+        self._logger.info("[DAL]: Закрытие соединения с базой данных")
         if self.conn:
             closed_attr = getattr(self.conn, "closed", 0)
             if isinstance(closed_attr, (int, bool)) and closed_attr:
@@ -325,13 +281,13 @@ class EventRepository:
             try:
                 self.conn.close()
             except Exception as e:
-                logger.info(f"Ошибка при закрытии соединения: {e}")
+                self._logger.info(f"[DAL]: Ошибка при закрытии соединения: {e}")
                 raise
 
     def __enter__(self):
-        logger.info("Вход в контекстный менеджер репозитория")
+        self._logger.info("[DAL]: Вход в контекстный менеджер репозитория")
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        logger.info("Выход из контекстного менеджера репозитория")
+        self._logger.info("[DAL]: Выход из контекстного менеджера репозитория")
         self.close()
