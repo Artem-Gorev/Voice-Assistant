@@ -1,94 +1,128 @@
-from datetime import datetime, timedelta
-from models.collision_processor import CollisionProcessor
+from abc import ABC, abstractmethod
+from datetime import datetime
 
-class CommandDispatcher:
-    def __init__(self, collision_proc: CollisionProcessor, EventRepository, SemanticSearchServce):
-        self.collision_proc = collision_proc
-        self.db = EventRepository
-        self.search = SemanticSearchServce
+class BaseActionHandler(ABC):
+    _HANDLERS = {}
 
-        self.current_query: dict = {}
-        self._has_collision = False
-        self._collision_text = ""
-        self._fetched_events = []
-        self._target_date = None
-        self._search_query = ""
+    def __init__(self, dispatcher):
+        self.dispatcher = dispatcher
+        self.logger = dispatcher.logger
 
-    def process_llm_response(self, llm_json: dict) -> str:
-        self.current_query = llm_json
-        action = llm_json.get("action")
-        self._has_collision = False
+    @classmethod
+    def create(cls, action: str, dispatcher) -> "BaseActionHandler | None":
+        handler_cls = cls._HANDLERS.get(action)
+        if handler_cls is None:
+            return None
+        return handler_cls(dispatcher)
 
-        if action == "create_event":
-            self._handle_create_event()
-        elif action == "list_events":
-            self._handle_list_events()
-        elif action == "search_events":
-            self._handle_search_events()
-        elif action == "clarify" or action == "chat":
-            pass
+    @classmethod
+    def register(cls, action: str):
+        def decorator(handler_cls: type["BaseActionHandler"]):
+            cls._HANDLERS[action] = handler_cls
+            return handler_cls
 
-        return self._generate_tts_text()
+        return decorator
 
-    def _handle_create_event(self):
-        data = self.current_query.get("data", {})
+    @property
+    def repo(self):
+        return self.dispatcher.repo
+
+    @property
+    def search(self):
+        return self.dispatcher.search
+
+    @abstractmethod
+    def run(self) -> str:
+        pass
+
+@BaseActionHandler.register("create_event")
+class CreateEventHandler(BaseActionHandler):
+    def run(self) -> str:
+        llm_output = self.dispatcher.current_query
+        data = llm_output.get("data", {})
 
         start_dt = datetime.fromisoformat(data["start_time"])
         target_date = start_dt.date()
         start_time = start_dt.time()
 
         if data.get("end_time"):
-            end_dt = datetime.fromisoformat(data["end_time"])
-            end_time = end_dt.time()
+            end_time = datetime.fromisoformat(data["end_time"]).time()
         else:
-            end_dt = start_dt + timedelta(hours=1)
-            end_time = end_dt.time()
+            end_time = (start_dt + self.dispatcher.collision_proc.default_duration).time()
 
-        conflict = self.collision_proc.check(target_date, start_time, end_time)
+        conflict = self.dispatcher.collision_proc.check(target_date, start_time, end_time)
 
         if conflict:
-            self._has_collision = True
-            self._collision_text = f"Внимание! На это время уже есть событие: {conflict['text']}."
-        else:
-            self.db.create_event(data)
+            self.logger.info(f"Обнаружена коллизия с событием: {conflict['text']}")
+            return f"Внимание! На это время уже есть событие: {conflict['text']}."
 
-    def _handle_list_events(self):
-        data = self.current_query.get("data", {})
-        self._target_date = datetime.fromisoformat(data["date"]).date()
-        self._fetched_events = self.db.get_events_by_date(self._target_date)
+        self.repo.create_event(data)
+        return llm_output.get("reply_text") or "Готово."
 
-    def _handle_search_events(self):
-        data = self.current_query.get("data", {})
-        self._search_query = data.get("query", "")
-        self._fetched_events = self.search.semantic_search(self._search_query, data.get("date_from"),
-                                                           data.get("date_to"))
 
-    def _generate_tts_text(self) -> str:
-        if self._has_collision:
-            return self._collision_text
+@BaseActionHandler.register("list_events")
+class ListEventsHandler(BaseActionHandler):
+    def run(self) -> str:
+        llm_output = self.dispatcher.current_query
+        data = llm_output.get("data", {})
+        target_date = datetime.fromisoformat(data["date"]).date()
 
-        action = self.current_query.get("action")
-        llm_reply = self.current_query.get("reply_text")
+        events = self.repo.get_events_by_date(target_date)
 
-        if action in ["create_event", "clarify", "chat"]:
-            return llm_reply or "Готово."
+        if not events:
+            return f"На {target_date.strftime('%d.%m.%Y')} у вас ничего не запланировано."
 
-        if action == "list_events":
-            if not self._fetched_events:
-                return f"На {self._target_date.strftime('%d.%m.%Y')} у вас ничего не запланировано."
-            text = "Вот ваши планы: "
-            for e in self._fetched_events:
-                t = e['time'].strftime("%H:%M") if e.get('time') else ""
-                text += f"В {t} — {e['text']}. "  # Используем поля из БД (time, text)
-            return text
+        text = "Вот ваши планы: "
+        for e in events:
+            t = e['time'].strftime("%H:%M") if e.get('time') else ""
+            text += f"В {t} — {e['text']}. "
+        return text
 
-        if action == "search_events":
-            if not self._fetched_events:
-                return f"Я не нашел ничего по запросу «{self._search_query}»."
-            text = "Я нашел следующее: "
-            for e in self._fetched_events:
-                d = e['date'].strftime("%d.%m") if e.get('date') else ""
-                text += f"{d} — {e['text']}. "
-            return text
+@BaseActionHandler.register("search_events")
+class SearchEventsHandler(BaseActionHandler):
+    def run(self) -> str:
+        llm_output = self.dispatcher.current_query
+        query = llm_output.get("data", {}).get("query", "")
 
-        return "Я не знаю, что ответить."
+        all_tasks = self.repo.get_all_events()
+        ranked_results = self.search.search_events_by_vector(query, all_tasks)
+
+        if not ranked_results:
+            return f"Я не нашел ничего по запросу «{query}»."
+
+        top_results = ranked_results[:3]
+
+        text = "Я нашел следующее: "
+        for e in top_results:
+            date_str = e.get('date', '')
+            if isinstance(date_str, datetime) or hasattr(date_str, 'strftime'):
+                date_str = date_str.strftime("%d.%m")
+            text += f"{date_str} — {e.get('text')}. "
+        return text
+
+@BaseActionHandler.register("clarify")
+@BaseActionHandler.register("chat")
+class DefaultChatHandler(BaseActionHandler):
+    def run(self) -> str:
+        llm_output = self.dispatcher.current_query
+        return llm_output.get("reply_text") or "Я вас слушаю."
+
+class CommandDispatcher:
+    def __init__(self, collision_proc, event_repository, semantic_search_service, logger):
+        self.collision_proc = collision_proc
+        self.repo = event_repository
+        self.search = semantic_search_service
+        self.logger = logger
+
+        self.current_query: dict = {}
+
+    def process_llm_response(self, llm_output: dict) -> str:
+        self.current_query = llm_output
+        action = llm_output.get("action")
+
+        handler = BaseActionHandler.create(action, self)
+        if handler is None:
+            self.logger.warning(f"Неизвестный action: {action}")
+            return llm_output.get("reply_text") or "Извините, я не понял команду."
+
+        return handler.run()
