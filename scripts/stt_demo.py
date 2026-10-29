@@ -4,7 +4,7 @@ import sys
 
 import sounddevice as sd
 
-from stt import SpeechRecognizer, TOneConfig
+from backend.ai_service.stt import SpeechRecognizer, TOneConfig
 
 logging.basicConfig(level=logging.INFO, format="[ %(levelname)s ] %(message)s")
 logger = logging.getLogger("STT_Sample")

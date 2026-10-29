@@ -5,9 +5,9 @@ from time import perf_counter
 import numpy as np
 import torch
 
-from tts.base import SpeechSynthesizer
-from tts.config import SileroConfig
-from tts.result import SpeechAudio
+from .base import SpeechSynthesizer
+from .config import SileroConfig
+from .result import SpeechAudio
 
 
 @SpeechSynthesizer.register("silero")

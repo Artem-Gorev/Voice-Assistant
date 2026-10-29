@@ -4,7 +4,7 @@ import sys
 
 import sounddevice as sd
 
-from tts import SileroConfig, SpeechSynthesizer
+from backend.ai_service.tts import SileroConfig, SpeechSynthesizer
 
 logging.basicConfig(level=logging.INFO, format="[ %(levelname)s ] %(message)s")
 logger = logging.getLogger("TTS_Sample")

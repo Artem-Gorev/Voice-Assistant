@@ -4,9 +4,9 @@ from time import perf_counter
 import numpy as np
 from tone import DecoderType, StreamingCTCPipeline
 
-from stt.base import SpeechRecognizer
-from stt.config import TOneConfig
-from stt.result import Transcription, TranscriptionSegment
+from .base import SpeechRecognizer
+from .config import TOneConfig
+from .result import Transcription, TranscriptionSegment
 
 
 @SpeechRecognizer.register("t_one")

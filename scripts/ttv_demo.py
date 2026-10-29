@@ -3,11 +3,9 @@ import logging
 import sys
 from time import perf_counter
 
-from ttv import RuBertTiny2Config, TextVectorizer
+from backend.ai_service.ttv import RuBertTiny2Config, TextVectorizer
 
-DEFAULT_TEXT = [
-    "Найди задачу, где надо связаться с Ваней по контракту"
-]
+DEFAULT_TEXT = "Найди задачу, где надо связаться с Ваней по контракту"
 
 DEFAULT_TEXTS = [
     "Позвонить Ивану и обсудить условия договора",

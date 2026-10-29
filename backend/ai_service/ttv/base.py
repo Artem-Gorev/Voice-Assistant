@@ -1,10 +1,11 @@
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 
-from stt.result import Transcription
+from .result import SearchResult, TextVectors
 
 
-class SpeechRecognizer(ABC):
+class TextVectorizer(ABC):
     _METHODS = {}
 
     def __init__(self, config, logger=None):
@@ -23,12 +24,15 @@ class SpeechRecognizer(ABC):
     def create(cls, model_name, config=None, logger=None):
         key = model_name.lower().replace("-", "_")
         implementation = cls._METHODS.get(key)
-
         if implementation is None:
             available = ", ".join(sorted(cls._METHODS))
-            raise ValueError(f"STT-модель '{model_name}' не найдена. Доступные модели: {available}")
+            raise ValueError(f"TTV-модель '{model_name}' не найдена. Доступные модели: {available}")
         return implementation(config=config, logger=logger)
 
     @abstractmethod
-    def transcribe(self, audio, sample_rate: int) -> Transcription:
+    def encode(self, texts: str | Sequence[str]) -> TextVectors:
+        pass
+
+    @abstractmethod
+    def search(self, query: str, corpus: Sequence[str], top_k: int = 5) -> list[SearchResult]:
         pass

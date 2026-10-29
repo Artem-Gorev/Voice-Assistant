@@ -1,11 +1,10 @@
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
 
-from ttv.result import SearchResult, TextVectors
+from .result import SpeechAudio
 
 
-class TextVectorizer(ABC):
+class SpeechSynthesizer(ABC):
     _METHODS = {}
 
     def __init__(self, config, logger=None):
@@ -26,13 +25,9 @@ class TextVectorizer(ABC):
         implementation = cls._METHODS.get(key)
         if implementation is None:
             available = ", ".join(sorted(cls._METHODS))
-            raise ValueError(f"TTV-модель '{model_name}' не найдена. Доступные модели: {available}")
+            raise ValueError(f"TTS-модель '{model_name}' не найдена. Доступные модели: {available}")
         return implementation(config=config, logger=logger)
 
     @abstractmethod
-    def encode(self, texts: str | Sequence[str]) -> TextVectors:
-        pass
-
-    @abstractmethod
-    def search(self, query: str, corpus: Sequence[str], top_k: int = 5) -> list[SearchResult]:
+    def synthesize(self, text: str) -> SpeechAudio:
         pass

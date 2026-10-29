@@ -7,9 +7,9 @@ import torch
 import torch.nn.functional as functional
 from transformers import AutoModel, AutoTokenizer
 
-from ttv.base import TextVectorizer
-from ttv.config import RuBertTiny2Config
-from ttv.result import SearchResult, TextVectors
+from .base import TextVectorizer
+from .config import RuBertTiny2Config
+from .result import SearchResult, TextVectors
 
 
 @TextVectorizer.register("rubert_tiny2")
