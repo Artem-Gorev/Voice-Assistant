@@ -1,82 +1,109 @@
+import os
 import re
+import sys
+import logging
+from datetime import datetime
 import pandas as pd
 import psycopg2
-from psycopg2.extras import execute_batch
-from datetime import datetime
 import pymorphy3
 
-CSV_PATH = "data/voice_assistant_events_1000.csv"
+logging.basicConfig(level=logging.INFO, format="[ %(levelname)s ] %(message)s")
+logger = logging.getLogger("ETL")
+
+MEETING_TRIGGERS = (
+    "встреч",
+    "созвон",
+    "демо",
+    "обсудить",
+    "планёрк",
+    "планерк",
+    "синхрон",
+    "интервью",
+    "митинг",
+)
 
 DB_CONFIG = {
-    "dbname": "assistant_db",
-    "user": "postgres",
-    "password": "postgres_password",
-    "host": "localhost",
-    "port": 5432
+    "dbname": os.getenv("POSTGRES_DB", "assistant_db"),
+    "user": os.getenv("POSTGRES_USER", "postgres"),
+    "password": os.getenv("POSTGRES_PASSWORD", "postgres_password"),
+    "host": os.getenv("POSTGRES_HOST", "localhost"),
+    "port": os.getenv("POSTGRES_PORT", "5433"),
 }
 
 morph = pymorphy3.MorphAnalyzer()
 
+
 def lemmatize_text(text: str) -> str:
-    if not isinstance(text, str):
-        return ""
-    words = re.findall(r'[а-яА-Яa-zA-Z0-9]+', text.lower())
+    words = re.findall(r"[а-яА-Яa-zA-Z0-9]+", text.lower())
     return " ".join([morph.parse(w)[0].normal_form for w in words])
+
 
 def classify_event(text: str) -> str:
     lower = text.lower()
-    meeting_triggers = ["встреч", "созвон", "демо", "обсудить", "планёрк", "планерк", "синхрон", "интервью", "митинг"]
-    if any(t in lower for t in meeting_triggers):
+    if any(trigger in lower for trigger in MEETING_TRIGGERS):
         return "meeting"
-    if lower.startswith("напомн") or " напомн" in lower:
-        return "reminder"
     return "task"
 
-def run_etl():
-    print("[ETL] Чтение исходного CSV...")
-    df = pd.read_csv(CSV_PATH)
-    
-    text_col = [c for c in df.columns if c.lower() in ['text', 'title', 'event', 'описание', 'событие']][0]
-    dt_col = [c for c in df.columns if c.lower() in ['date', 'datetime', 'scheduled_at', 'время', 'дата']][0]
 
-    # Ориентир текущей даты для классификации выполненных задач
+def run_etl(csv_path: str = "data/voice_assistant_events_1000_77e927b5d2.csv") -> int:
+    if not os.path.exists(csv_path):
+        alt_path = os.path.join("..", "..", csv_path)
+        if os.path.exists(alt_path):
+            csv_path = alt_path
+        else:
+            logger.error(f"Файл {csv_path} не найден.")
+            return 1
+
+    df = pd.read_csv(csv_path)
+    logger.info(f"Обработка {len(df)} записей из {csv_path}...")
+
+    text_col = [c for c in df.columns if c.lower() in ["text", "title", "event", "описание", "событие"]][0]
+    dt_col = [c for c in df.columns if c.lower() in ["date", "datetime", "scheduled_at", "время", "дата"]][0]
+
     current_date = datetime.now().date()
-
     records = []
-    print(f"[ETL] Обработка {len(df)} записей...")
+
     for _, row in df.iterrows():
         raw_text = str(row[text_col]).strip()
-        raw_dt = str(row[dt_col]).strip()
-        
-        try:
-            dt_obj = pd.to_datetime(raw_dt)
-            e_date = dt_obj.date()
-            e_time = dt_obj.time()
-        except Exception:
-            e_date, e_time = None, None
-            
+        if not raw_text:
+            continue
+
+        start_dt = pd.to_datetime(row[dt_col])
+        end_dt = pd.to_datetime(row.get("end_time", start_dt))
+
+        if end_dt < start_dt:
+            start_dt, end_dt = end_dt, start_dt
+
         event_type = classify_event(raw_text)
-        normalized = lemmatize_text(raw_text)
-        status = "completed" if (e_date and e_date < current_date) else "pending"
-        
-        records.append((event_type, raw_text, normalized, e_date, e_time, status))
+        lemmatized = lemmatize_text(raw_text)
+        status = "completed" if start_dt.date() < current_date else "pending"
+
+        records.append((
+            raw_text,
+            lemmatized,
+            event_type,
+            status,
+            start_dt,
+            end_dt,
+        ))
 
     conn = psycopg2.connect(**DB_CONFIG)
     cur = conn.cursor()
-    
-    # Защита от дублей при повторных запусках
-    print("[ETL] Очистка старых данных (TRUNCATE)...")
-    cur.execute("TRUNCATE TABLE events RESTART IDENTITY;")
-    
-    insert_query = """
-        INSERT INTO events (event_type, title, normalized_text, event_date, event_time, status)
+
+    query = """
+        INSERT INTO events (original_text, lemmatized_text, event_type, status, start_time, end_time)
         VALUES (%s, %s, %s, %s, %s, %s)
+        ON CONFLICT DO NOTHING;
     """
-    execute_batch(cur, insert_query, records, page_size=200)
+
+    cur.executemany(query, records)
     conn.commit()
     cur.close()
     conn.close()
-    print(f"[ETL] Успешно загружено записей: {len(records)}")
+
+    logger.info(f"Успешно загружено записей: {len(records)}")
+    return 0
+
 
 if __name__ == "__main__":
-    run_etl()
+    sys.exit(run_etl() or 0)
