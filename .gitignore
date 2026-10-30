@@ -1,3 +1,4 @@
+*.webm
 .web
 *.py[cod]
 *.db
