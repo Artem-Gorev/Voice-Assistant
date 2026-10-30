@@ -92,11 +92,12 @@ class VoiceAssistant:
             raise ValueError("Текст запроса не должен быть пустым")
 
         self._logger.info(f"Пользователь: {normalized_text}")
-        current_datetime = datetime.now().astimezone()
-        result = self._llm.process(normalized_text, session_id="cli", current_dt=current_datetime)
-
-        self._logger.debug(f"[LLM]:\n{result.model_dump_json(indent=2)}")
-        response = self._dispatcher.process_llm_response(result.model_dump(mode="json"))
+        response = self._dispatcher.process_followup(normalized_text, session_id="cli")
+        if response is None:
+            current_datetime = datetime.now().astimezone()
+            result = self._llm.process(normalized_text, session_id="cli", current_dt=current_datetime)
+            self._logger.debug(f"[LLM]:\n{result.model_dump_json(indent=2)}")
+            response = self._dispatcher.process_llm_response(result.model_dump(mode="json"), session_id="cli")
         if text_output:
             self._logger.info(f"Ассистент: {response}")
         if voice_output:

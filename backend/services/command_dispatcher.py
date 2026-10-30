@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime, time
 
 from backend.event_text import clean_event_title
+from backend.services.event_management import EventManagementService
 
 
 def _remove_duplicate_events(events: list[dict]) -> list[dict]:
@@ -57,29 +58,7 @@ class BaseActionHandler(ABC):
 @BaseActionHandler.register("create_event")
 class CreateEventHandler(BaseActionHandler):
     def run(self) -> str:
-        llm_output = self.dispatcher.current_query
-        data = llm_output.get("data", {})
-
-        start_dt = datetime.fromisoformat(data["start_time"])
-        target_date = start_dt.date()
-        start_time = start_dt.time()
-
-        if data.get("end_time"):
-            end_time = datetime.fromisoformat(data["end_time"]).time()
-        else:
-            end_time = (start_dt + self.dispatcher.collision_proc.default_duration).time()
-
-        conflict = self.dispatcher.collision_proc.check(target_date, start_time, end_time)
-
-        if conflict:
-            self.logger.info(f"[SERVICES]: Обнаружена коллизия с событием: {conflict['text']}")
-            return f"Внимание! На это время уже есть событие: {conflict['text']}."
-
-        self.repo.create_event(data)
-        if llm_output.get("reply_text"):
-            return llm_output["reply_text"]
-        end_label = f" до {end_time:%H:%M}" if data.get("end_time") else ""
-        return f"Добавила «{data['title']}» в расписание на {target_date:%d.%m} в {start_time:%H:%M}{end_label}."
+        return self.dispatcher.manager.create(self.dispatcher.current_query.get("data", {}), self.dispatcher.session_id)
 
 
 @BaseActionHandler.register("list_events")
@@ -108,6 +87,7 @@ class ListEventsHandler(BaseActionHandler):
 
         original_count = len(events)
         events = _remove_duplicate_events(events)
+        self.dispatcher.manager.remember(self.dispatcher.session_id, events)
         if len(events) < original_count:
             self.logger.info(f"[SERVICES]: Скрыты повторяющиеся события из выдачи: {original_count - len(events)}")
 
@@ -135,6 +115,7 @@ class SearchEventsHandler(BaseActionHandler):
         all_tasks = self.repo.get_all_events()
         ranked_results = self.search.search_events_by_vector(query, all_tasks)
         ranked_results = _remove_duplicate_events(ranked_results)
+        self.dispatcher.manager.remember(self.dispatcher.session_id, ranked_results[:3])
 
         if not ranked_results:
             return f"Я не нашла достаточно похожих записей по запросу «{query}»."
@@ -157,17 +138,28 @@ class DefaultChatHandler(BaseActionHandler):
         llm_output = self.dispatcher.current_query
         return llm_output.get("reply_text") or "Я вас слушаю."
 
+
+@BaseActionHandler.register("update_event")
+@BaseActionHandler.register("delete_event")
+@BaseActionHandler.register("complete_event")
+class EventManagementHandler(BaseActionHandler):
+    def run(self) -> str:
+        return self.dispatcher.manager.process(self.dispatcher.current_query["action"], self.dispatcher.current_query.get("data", {}), self.dispatcher.session_id)
+
 class CommandDispatcher:
     def __init__(self, collision_proc, event_repository, semantic_search_service, logger):
         self.collision_proc = collision_proc
         self.repo = event_repository
         self.search = semantic_search_service
         self.logger = logger
+        self.manager = EventManagementService(event_repository, collision_proc, logger)
+        self.session_id = "default"
 
         self.current_query: dict = {}
 
-    def process_llm_response(self, llm_output: dict) -> str:
+    def process_llm_response(self, llm_output: dict, session_id: str = "default") -> str:
         self.current_query = llm_output
+        self.session_id = session_id
         action = llm_output.get("action")
 
         handler = BaseActionHandler.create(action, self)
@@ -176,3 +168,6 @@ class CommandDispatcher:
             return llm_output.get("reply_text") or "Извините, я не понял команду."
 
         return handler.run()
+
+    def process_followup(self, text: str, session_id: str = "default") -> str | None:
+        return self.manager.followup(text, session_id)

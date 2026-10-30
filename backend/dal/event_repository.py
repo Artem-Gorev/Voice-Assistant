@@ -32,6 +32,9 @@ class EventRepository:
             self._logger.info(f"[DAL]: Ошибка при установке autocommit: {e}")
             raise
 
+        with self._get_cursor() as cur:
+            cur.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS series_id UUID")
+
     def _get_cursor(self):
         self._logger.info("[DAL]: Получение курсора базы данных")
         try:
@@ -74,6 +77,11 @@ class EventRepository:
             )
         )
         start_val = data.get("start_time")
+        if isinstance(start_val, datetime) and start_val.tzinfo is not None:
+            start_val = start_val.astimezone().replace(tzinfo=None)
+        end_val = data.get("end_time")
+        if isinstance(end_val, datetime) and end_val.tzinfo is not None:
+            end_val = end_val.astimezone().replace(tzinfo=None)
         ev_date, ev_time = _extract_date_time(start_val)
         if ev_date is None and ("event_date" in data or "date" in data):
             ev_date = _normalize_date(data.get("event_date") or data.get("date"))
@@ -85,6 +93,10 @@ class EventRepository:
             "text": str(text_val) if text_val is not None else "",
             "date": ev_date,
             "time": ev_time,
+            "start_time": start_val,
+            "end_time": end_val,
+            "status": data.get("status"),
+            "series_id": str(data["series_id"]) if data.get("series_id") else None,
         }
 
     _map_row = _format_row
@@ -172,7 +184,7 @@ class EventRepository:
             self._logger.info(f"[DAL]: Ошибка при получении событий по диапазону дат: {e}")
             raise
 
-    def create_event(self, data: dict[str, Any]) -> None:
+    def create_event(self, data: dict[str, Any]) -> int | None:
         self._logger.info("[DAL]: Создание нового события")
         raw_text = (
             data.get("original_text")
@@ -230,8 +242,9 @@ class EventRepository:
             LIMIT 1;
         """
         query = """
-            INSERT INTO events (original_text, lemmatized_text, event_type, status, start_time, end_time, embedding)
-            VALUES (%(original_text)s, %(lemmatized_text)s, %(event_type)s, %(status)s, %(start_time)s, %(end_time)s, %(embedding)s);
+            INSERT INTO events (original_text, lemmatized_text, event_type, status, start_time, end_time, embedding, series_id)
+            VALUES (%(original_text)s, %(lemmatized_text)s, %(event_type)s, %(status)s, %(start_time)s, %(end_time)s, %(embedding)s, %(series_id)s)
+            RETURNING id;
         """
         params = {
             "original_text": raw_text,
@@ -243,23 +256,64 @@ class EventRepository:
             "start_time": start_dt,
             "end_time": end_dt,
             "embedding": embedding_val,
+            "series_id": data.get("series_id"),
         }
         try:
             with self._get_cursor() as cur:
                 cur.execute(duplicate_query, params)
-                if cur.fetchone():
+                existing = cur.fetchone()
+                if existing:
                     self._logger.info(f"[DAL]: Пропущено повторное событие '{raw_text}' на {start_dt}")
-                    return
+                    return existing["id"] if isinstance(existing, dict) else existing[0]
                 cur.execute(query, params)
+                created = cur.fetchone()
             self.conn.commit()
+            return created["id"] if isinstance(created, dict) else created[0]
         except Exception as e:
             self._logger.info(f"[DAL]: Ошибка при создании события: {e}")
             raise
 
+    def get_event_by_id(self, event_id: int) -> dict[str, Any] | None:
+        with self._get_cursor() as cur:
+            cur.execute("SELECT * FROM events WHERE id = %s", (event_id,))
+            return self._format_row(cur.fetchone(), getattr(cur, "description", None))
+
+    def get_series_events(self, series_id: str) -> list[dict[str, Any]]:
+        with self._get_cursor() as cur:
+            cur.execute("SELECT * FROM events WHERE series_id = %s ORDER BY start_time", (series_id,))
+            return [self._format_row(row, getattr(cur, "description", None)) for row in cur.fetchall()]
+
+    def update_event(self, event_id: int, *, title: str | None = None, start_time: datetime | None = None,
+                     end_time: datetime | None = None) -> None:
+        fields = []
+        params: list[Any] = []
+        if title is not None:
+            fields.extend(["original_text = %s", "lemmatized_text = %s", "event_type = %s", "embedding = NULL"])
+            params.extend([title, lemmatize_text(title), classify_event(title)])
+        if start_time is not None:
+            fields.extend(["start_time = %s", "end_time = %s"])
+            params.extend([start_time, end_time or start_time])
+        if not fields:
+            return
+        params.append(event_id)
+        with self._get_cursor() as cur:
+            cur.execute(f"UPDATE events SET {', '.join(fields)} WHERE id = %s", params)
+        self._logger.info(f"[DAL]: Обновлено событие {event_id}")
+
+    def delete_event(self, event_id: int) -> None:
+        with self._get_cursor() as cur:
+            cur.execute("DELETE FROM events WHERE id = %s", (event_id,))
+        self._logger.info(f"[DAL]: Удалено событие {event_id}")
+
+    def complete_event(self, event_id: int) -> None:
+        with self._get_cursor() as cur:
+            cur.execute("UPDATE events SET status = 'completed' WHERE id = %s", (event_id,))
+        self._logger.info(f"[DAL]: Завершено событие {event_id}")
+
     def get_all_events(self) -> list[dict[str, Any]]:
         self._logger.info("[DAL]: Получение всех событий для семантического анализа")
         query = (
-            "SELECT id, original_text, lemmatized_text, start_time "
+            "SELECT id, original_text, lemmatized_text, start_time, end_time, status, series_id "
             "FROM events ORDER BY id ASC;"
         )
         try:

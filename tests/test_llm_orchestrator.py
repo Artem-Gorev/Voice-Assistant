@@ -98,7 +98,7 @@ class TestLLMOrchestrator(unittest.TestCase):
         )
         self.assertEqual(res1.action, "clarify")
         self.assertIsInstance(res1, LLMResult)
-        self.assertEqual(res1.data["missing_field"], "start_time")
+        self.assertEqual(res1.data["missing_field"], "date_and_time")
         self.assertEqual(res1.data["partial_data"]["title"], "Забрать посылку")
         self.assertIn(session_id, self.orchestrator.sessions)
         self.assertIsInstance(self.orchestrator.sessions[session_id], DialogSession)
