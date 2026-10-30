@@ -9,9 +9,12 @@ from pathlib import Path
 
 # Глобальные стили для скроллбара
 style = {
-    "::-webkit-scrollbar": {
-        "display": "none",
-    }
+    "::-webkit-scrollbar": {"display": "none"},
+    "@keyframes pulse": {
+        "0%": {"boxShadow": "0 0 0 0 rgba(255, 77, 77, 0.55)"},
+        "70%": {"boxShadow": "0 0 0 8px rgba(255, 77, 77, 0)"},
+        "100%": {"boxShadow": "0 0 0 0 rgba(255, 77, 77, 0)"},
+    },
 }
 
 # --- 1. ПАЛИТРА ЦВЕТОВ ---
@@ -167,6 +170,31 @@ class State(rx.State):
                         if (event.data && event.data.size > 0) window.__voiceChunks.push(event.data);
                     };
 
+                    // Анализатор громкости для живой звуковой волны.
+                    window.__voiceAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    window.__voiceAnalyser = window.__voiceAudioContext.createAnalyser();
+                    window.__voiceAnalyser.fftSize = 128;
+                    window.__voiceAudioContext.createMediaStreamSource(window.__voiceStream)
+                        .connect(window.__voiceAnalyser);
+                    window.__voiceFrequencyData = new Uint8Array(window.__voiceAnalyser.frequencyBinCount);
+                    window.__voiceStartedAt = Date.now();
+                    window.__voiceTimer = window.setInterval(() => {
+                        const elapsed = Math.floor((Date.now() - window.__voiceStartedAt) / 1000);
+                        const timer = document.getElementById('voice-recording-timer');
+                        if (timer) timer.textContent = String(Math.floor(elapsed / 60)).padStart(2, '0') + ':' + String(elapsed % 60).padStart(2, '0');
+                    }, 250);
+                    const animateWave = () => {
+                        if (!window.__voiceAnalyser) return;
+                        window.__voiceAnalyser.getByteFrequencyData(window.__voiceFrequencyData);
+                        for (let i = 0; i < 36; i++) {
+                            const bar = document.getElementById('voice-wave-' + i);
+                            if (!bar) continue;
+                            const value = window.__voiceFrequencyData[i % window.__voiceFrequencyData.length] || 0;
+                            bar.style.height = (5 + value / 255 * 34) + 'px';
+                        }
+                        window.__voiceAnimationFrame = requestAnimationFrame(animateWave);
+                    };
+                    animateWave();
                     window.__voiceRecorder.start();
                     return true;
                 } catch (error) {
@@ -178,6 +206,37 @@ class State(rx.State):
                     }
                     return false;
                 }
+            })()
+        """)
+
+    def cancel_recording(self):
+        """Останавливает запись и удаляет её временные данные без сохранения."""
+        self.is_recording = False
+        return rx.call_script("""
+            (() => {
+                if (window.__voiceTimer) clearInterval(window.__voiceTimer);
+                if (window.__voiceAnimationFrame) cancelAnimationFrame(window.__voiceAnimationFrame);
+                if (window.__voiceRecorder && window.__voiceRecorder.state !== "inactive") {
+                    window.__voiceRecorder.ondataavailable = null;
+                    window.__voiceRecorder.onstop = null;
+                    window.__voiceRecorder.stop();
+                }
+                if (window.__voiceStream) {
+                    window.__voiceStream.getTracks().forEach(track => track.stop());
+                    window.__voiceStream = null;
+                }
+                if (window.__voiceAudioContext) window.__voiceAudioContext.close();
+                window.__voiceAudioContext = null;
+                window.__voiceAnalyser = null;
+                window.__voiceChunks = [];
+                window.__voiceRecorder = null;
+                const timer = document.getElementById('voice-recording-timer');
+                if (timer) timer.textContent = '00:00';
+                for (let i = 0; i < 36; i++) {
+                    const bar = document.getElementById('voice-wave-' + i);
+                    if (bar) bar.style.height = '5px';
+                }
+                return true;
             })()
         """)
 
@@ -193,6 +252,10 @@ class State(rx.State):
                 }
 
                 recorder.onstop = () => {
+                    if (window.__voiceTimer) clearInterval(window.__voiceTimer);
+                    if (window.__voiceAnimationFrame) cancelAnimationFrame(window.__voiceAnimationFrame);
+                    if (window.__voiceAudioContext) window.__voiceAudioContext.close();
+                    window.__voiceAnalyser = null;
                     const chunks = window.__voiceChunks || [];
                     const blob = new Blob(chunks, {type: recorder.mimeType || "audio/webm"});
 
@@ -298,6 +361,26 @@ def index() -> rx.Component:
                     width="100%", padding="40px", gap="24px",
                 ),
                 type="scroll", scrollbars="vertical", style={"height": "100%", "flex": "1"},
+            ),
+            rx.cond(
+                State.is_recording,
+                rx.vstack(
+                    rx.hstack(
+                        rx.box(width="8px", height="8px", border_radius="50%", background="#ff4d4d", animation="pulse 1s infinite"),
+                        rx.text("Идёт запись", color="#ff7777", font_size="13px", font_weight="600"),
+                        rx.spacer(),
+                        rx.text("00:00", id="voice-recording-timer", color=COLORS["text_main"], font_size="14px", font_weight="600", font_family="monospace"),
+                        rx.button("Отменить", on_click=State.cancel_recording, size="1", variant="ghost", color=COLORS["text_muted"], background="transparent"),
+                        width="100%", align_items="center",
+                    ),
+                    rx.hstack(
+                        *[rx.box(id=f"voice-wave-{i}", width="4px", height="5px", min_height="5px", background="#c4a787", border_radius="4px", transition="height 80ms linear") for i in range(36)],
+                        width="100%", height="44px", align_items="center", justify_content="center", spacing="1",
+                    ),
+                    width="100%", max_width="800px", padding="12px 18px", margin_bottom="10px",
+                    background="rgba(255, 77, 77, 0.07)", border="1px solid rgba(255, 77, 77, 0.25)", border_radius="16px",
+                ),
+                rx.fragment(),
             ),
             rx.form(
                 rx.hstack(
