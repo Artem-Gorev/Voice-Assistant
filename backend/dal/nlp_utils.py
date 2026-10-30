@@ -21,7 +21,7 @@ def lemmatize_text(text: str | None) -> str:
     if not isinstance(text, str) or not text.strip():
         return ""
 
-    words = re.findall(r"[а-яА-Яa-zA-Z0-9]+", text.lower())
+    words = re.findall(r"[а-яёА-ЯЁa-zA-Z0-9]+", text.lower())
     if not words:
         return ""
 

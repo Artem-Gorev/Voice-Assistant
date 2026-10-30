@@ -9,6 +9,8 @@ class CreateEventData(BaseModel):
     end_time: str | None = Field(default=None, description="Strict ISO 8601 format (YYYY-MM-DDTHH:MM:SS)")
     category: str | None = "Другое"
     description: str | None = None
+    recurrence: Literal["daily", "weekly", "monthly"] | None = None
+    recurrence_count: int | None = Field(default=None, ge=2, le=52)
 
     @field_validator("title")
     @classmethod
@@ -109,8 +111,28 @@ class ClarifyData(BaseModel):
     partial_data: dict[str, Any] | None = Field(default_factory=dict)
 
 
+class EventChangeData(BaseModel):
+    query: str | None = None
+    event_id: int | None = None
+    new_start_time: datetime | None = None
+    new_date: date | None = None
+    new_time: str | None = None
+    new_title: str | None = None
+    target_date: date | None = None
+    target_time: str | None = None
+    scope: Literal["one", "series", "all"] = "one"
+
+
+class EventTargetData(BaseModel):
+    query: str | None = None
+    event_id: int | None = None
+    target_date: date | None = None
+    target_time: str | None = None
+    scope: Literal["one", "series", "all"] = "one"
+
+
 class LLMResult(BaseModel):
-    action: Literal["create_event", "list_events", "search_events", "clarify", "chat"]
+    action: Literal["create_event", "list_events", "search_events", "update_event", "delete_event", "complete_event", "clarify", "chat"]
     data: dict[str, Any]
     reply_text: str | None = None
 
@@ -120,6 +142,9 @@ class LLMResult(BaseModel):
             "create_event": CreateEventData,
             "list_events": ListEventsData,
             "search_events": SearchEventsData,
+            "update_event": EventChangeData,
+            "delete_event": EventTargetData,
+            "complete_event": EventTargetData,
             "clarify": ClarifyData,
         }
         schema_cls = action_map.get(self.action)

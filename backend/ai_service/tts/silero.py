@@ -5,6 +5,8 @@ from time import perf_counter
 import numpy as np
 import torch
 
+from backend.text_normalizer import normalize_text_for_speech
+
 from .base import SpeechSynthesizer
 from .config import SileroConfig
 from .result import SpeechAudio
@@ -42,7 +44,7 @@ class SileroSynthesizer(SpeechSynthesizer):
         return self._model
 
     def synthesize(self, text: str) -> SpeechAudio:
-        normalized_text = " ".join((text or "").split())
+        normalized_text = normalize_text_for_speech(" ".join((text or "").split()))
         if not normalized_text:
             raise ValueError("Текст для синтеза не должен быть пустым")
 

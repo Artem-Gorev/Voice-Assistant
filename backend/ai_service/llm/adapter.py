@@ -101,22 +101,35 @@ class LLMOrchestrator(LanguageModel):
         self._logger.info(f"[LLM]: Обработка запроса (сессия '{session_id}'): '{user_text}'")
 
         try:
+            management = _parse_management_command(user_text, now)
+            if management:
+                result = LLMResult.model_validate(management)
+                self._sessions.delete(session_id)
+                self._logger.info(f"[LLM]: Распознано действие: '{result.action}'")
+                return result
             if session:
-                if self._is_session_continuation(user_text, session):
+                if session.missing_field == "event_details":
+                    user_text = f"Исходный запрос: {session.partial_data['original_text']}\nУточняющий вопрос: {session.partial_data['assistant_question']}\nОтвет пользователя: {user_text}"
+                    self._sessions.delete(session_id)
+                    session = None
+                elif self._is_session_continuation(user_text, session):
                     session_result = self._resolve_session_turn(user_text, session, now)
                     result = LLMResult.model_validate(session_result)
                     result.reply_text = _feminize_reply(result.reply_text)
                     self._update_fsm(session_id, result)
                     self._logger.info(f"[LLM]: Распознано действие: '{result.action}'")
                     return result
-                self._sessions.delete(session_id)
-                session = None
+                else:
+                    self._sessions.delete(session_id)
+                    session = None
 
             if self._config.mock_mode or self._client is None:
                 simulated_raw = self._simulator.process(user_text, session, now)
                 simulated_raw = self._apply_temporal_rules(simulated_raw, user_text, now)
                 simulated_raw = self._normalize_create_intent(simulated_raw, user_text, now)
+                simulated_raw = self._clarify_ambiguous_hour(simulated_raw, user_text, now)
                 simulated_raw = self._ensure_event_clarification(simulated_raw, user_text, now)
+                simulated_raw = _add_recurrence(simulated_raw, user_text)
                 result = LLMResult.model_validate(simulated_raw)
                 result.reply_text = _feminize_reply(result.reply_text)
                 self._update_fsm(session_id, result)
@@ -134,17 +147,34 @@ class LLMOrchestrator(LanguageModel):
                 payload = parse_json_payload(raw_content)
             except ValueError:
                 fallback_query = _extract_search_query(user_text)
-                if fallback_query is None:
+                if fallback_query:
+                    self._logger.warning(f"[LLM]: Ответ не был JSON; использую резервный поиск по запросу '{fallback_query}'")
+                    payload = {"action": "search_events", "data": {"query": fallback_query, "date_from": None, "date_to": None}, "reply_text": None}
+                elif isinstance(raw_content, str) and raw_content.strip():
+                    self._logger.warning("[LLM]: Ответ не был JSON; показываю текст модели")
+                    if _is_create_intent(user_text) or _is_natural_clarification(raw_content):
+                        partial = {"scheduled_date": resolved.isoformat() if (resolved := resolve_date(user_text, now, for_event=True)) else None, "scheduled_time": _extract_clock_time(user_text)}
+                        if _is_create_intent(user_text):
+                            partial["original_text"] = user_text
+                            missing_field = "title"
+                        else:
+                            partial = {"original_text": user_text, "assistant_question": raw_content.strip()}
+                            missing_field = "event_details"
+                        payload = {"action": "clarify", "data": {"missing_field": missing_field, "partial_data": partial}, "reply_text": raw_content.strip()}
+                    else:
+                        payload = {"action": "chat", "data": {}, "reply_text": raw_content.strip()}
+                    result = LLMResult.model_validate(payload)
+                    result.reply_text = _feminize_reply(result.reply_text)
+                    self._update_fsm(session_id, result)
+                    self._logger.info(f"[LLM]: Распознано действие: '{result.action}'")
+                    return result
+                else:
                     raise
-                self._logger.warning(f"[LLM]: Ответ не был JSON; использую резервный поиск по запросу '{fallback_query}'")
-                payload = {
-                    "action": "search_events",
-                    "data": {"query": fallback_query, "date_from": None, "date_to": None},
-                    "reply_text": None,
-                }
             payload = self._apply_temporal_rules(payload, user_text, now)
             payload = self._normalize_create_intent(payload, user_text, now)
+            payload = self._clarify_ambiguous_hour(payload, user_text, now)
             payload = self._ensure_event_clarification(payload, user_text, now)
+            payload = _add_recurrence(payload, user_text)
             result = LLMResult.model_validate(payload)
             result.reply_text = _feminize_reply(result.reply_text)
             self._update_fsm(session_id, result)
@@ -157,6 +187,8 @@ class LLMOrchestrator(LanguageModel):
 
     @staticmethod
     def _apply_temporal_rules(payload: dict[str, Any], user_text: str, now: datetime) -> dict[str, Any]:
+        if payload.get("action") in {"update_event", "delete_event", "complete_event"}:
+            return payload
         lookup_query = extract_event_lookup_query(user_text)
         if lookup_query is None and payload.get("action") != "create_event":
             lookup_query = _extract_search_query(user_text)
@@ -231,10 +263,28 @@ class LLMOrchestrator(LanguageModel):
         return payload
 
     @staticmethod
+    def _clarify_ambiguous_hour(payload: dict[str, Any], user_text: str, now: datetime) -> dict[str, Any]:
+        if payload.get("action") != "create_event":
+            return payload
+        spoken_hours = {"один": 1, "два": 2, "три": 3, "четыре": 4, "пять": 5, "шесть": 6, "семь": 7, "восемь": 8, "девять": 9, "десять": 10, "одиннадцать": 11, "двенадцать": 12}
+        match = re.search(r"\b(?:в|на|к)\s+(\d{1,2}|[а-яё]+)\s+час(?:а|ов)?\b", user_text.casefold())
+        if not match or re.match(r"\s*(?:утра|вечера|дня|ночи)\b", user_text[match.end():].casefold()):
+            return payload
+        hour = int(match.group(1)) if match.group(1).isdigit() else spoken_hours.get(match.group(1))
+        if hour is None or not 1 <= hour <= 12:
+            return payload
+        title = str((payload.get("data") or {}).get("title") or "событие")
+        target_date = resolve_date(user_text, now, for_event=True)
+        morning = 0 if hour == 12 else hour
+        evening = 12 if hour == 12 else hour + 12
+        partial = {"title": title, "scheduled_date": target_date.isoformat() if target_date else None, "scheduled_hour": hour}
+        return {"action": "clarify", "data": {"missing_field": "time_of_day", "partial_data": partial}, "reply_text": f"На какое время запланировать «{title}»: на {morning:02d}:00 или {evening:02d}:00?"}
+
+    @staticmethod
     def _ensure_event_clarification(payload: dict[str, Any], user_text: str, now: datetime) -> dict[str, Any]:
         action = payload.get("action")
         data = dict(payload.get("data") or {})
-        if action == "clarify" and data.get("missing_field") in {"date", "date_and_time"}:
+        if action == "clarify" and data.get("missing_field") in {"date", "date_and_time", "time_of_day"}:
             return payload
         title = str(data.get("title") or "").strip(" \t\n.,!?«»\"'")
         title_is_missing = _is_placeholder_title(title)
@@ -244,6 +294,8 @@ class LLMOrchestrator(LanguageModel):
             partial = {
                 "scheduled_date": scheduled_date.isoformat() if scheduled_date else None,
                 "start_time": scheduled_start.isoformat() if scheduled_start else None,
+                "scheduled_time": scheduled_start.strftime("%H:%M") if scheduled_start else None,
+                "event_kind": "Встреча" if "встреч" in title.casefold() or "встреч" in user_text.casefold() else None,
             }
             data["missing_field"] = "title"
             data["partial_data"] = partial
@@ -340,6 +392,12 @@ class LLMOrchestrator(LanguageModel):
 
     @staticmethod
     def _title_question(partial_data: dict[str, Any], now: datetime) -> str:
+        if partial_data.get("event_kind") == "Встреча":
+            scheduled_date = partial_data.get("scheduled_date")
+            scheduled_time = partial_data.get("scheduled_time")
+            detail = f" на {date.fromisoformat(scheduled_date):%d.%m}" if scheduled_date else ""
+            detail += f" в {scheduled_time}" if scheduled_time else ""
+            return f"С кем или по какому поводу встреча{detail}?"
         scheduled_date = partial_data.get("scheduled_date")
         if scheduled_date:
             day = datetime.fromisoformat(scheduled_date).date()
@@ -368,8 +426,30 @@ class LLMOrchestrator(LanguageModel):
     @staticmethod
     def _resolve_session_turn(user_text: str, session: DialogSession, now: datetime) -> dict[str, Any] | None:
         partial = dict(session.partial_data)
+        if session.missing_field == "time_of_day":
+            target_date = resolve_date(user_text, now, for_event=True)
+            if target_date:
+                partial["scheduled_date"] = target_date.isoformat()
+            explicit_time = _extract_clock_time(user_text)
+            hour = partial["scheduled_hour"]
+            normalized = user_text.casefold()
+            if explicit_time:
+                selected_time = explicit_time
+            elif "вечер" in normalized or "ноч" in normalized:
+                selected_time = f"{(12 if hour == 12 else hour + 12):02d}:00"
+            elif "утр" in normalized or "дн" in normalized:
+                selected_time = f"{(0 if hour == 12 else hour):02d}:00"
+            else:
+                return {"action": "clarify", "data": {"missing_field": "time_of_day", "partial_data": partial}, "reply_text": session.last_reply_text}
+            if not partial.get("scheduled_date"):
+                partial["scheduled_time"] = selected_time
+                return {"action": "clarify", "data": {"missing_field": "date", "partial_data": partial}, "reply_text": LLMOrchestrator._date_question(partial)}
+            start = datetime.combine(date.fromisoformat(partial["scheduled_date"]), datetime.strptime(selected_time, "%H:%M").time())
+            return LLMOrchestrator._create_event_result(partial["title"], start)
         if session.missing_field == "title":
             title = clean_event_title(user_text.strip(" \t\n.,!?«»\"'"))
+            if partial.get("event_kind") == "Встреча" and re.match(r"^(?:с|со|по|для)\b", title.casefold()):
+                title = f"Встреча {title}"
             if not _is_placeholder_title(title):
                 partial["title"] = title
 
@@ -386,8 +466,10 @@ class LLMOrchestrator(LanguageModel):
         if title and scheduled_date and scheduled_time:
             start_dt = datetime.combine(date.fromisoformat(scheduled_date),
                                         datetime.strptime(scheduled_time, "%H:%M").time())
-
-            return LLMOrchestrator._create_event_result(title, start_dt)
+            result = LLMOrchestrator._create_event_result(title, start_dt)
+            result["data"]["recurrence"] = partial.get("recurrence")
+            result["data"]["recurrence_count"] = partial.get("recurrence_count")
+            return result
 
         if not title:
             missing_field = "title"
@@ -517,4 +599,147 @@ def _extract_search_query(text: str) -> str | None:
     query_words = normalized.split()
     query = " ".join(query_words)
     return query or None
+
+
+def _parse_management_command(text: str, now: datetime) -> dict[str, Any] | None:
+    normalized = text.casefold().strip()
+    action = None
+    verb_pattern = None
+    if re.search(r"\b(?:перенеси|перенести|передвинь|сдвинь|измени|поменяй|переименуй)\b", normalized):
+        action = "update_event"
+        verb_pattern = r"\b(?:перенеси|перенести|передвинь|сдвинь|измени|поменяй|переименуй)\b"
+    elif re.search(r"\b(?:удали|удалить|отмени|отменить|отмените|убери)\b", normalized):
+        action = "delete_event"
+        verb_pattern = r"\b(?:удали|удалить|отмени|отменить|отмените|убери)\b"
+    elif re.search(r"\b(?:отметь|пометь)\b.*\b(?:выполненн\w*|сделанн\w*)\b", normalized) or re.search(r"\b(?:выполнил[аи]?|сделал[аи]?)\b", normalized):
+        action = "complete_event"
+        verb_pattern = r"\b(?:отметь|пометь|выполнил[аи]?|сделал[аи]?)\b"
+    if action is None:
+        return None
+    normalized = _normalize_spoken_time(normalized)
+    series_scope = bool(re.search(r"\b(?:всю серию|каждое повторение|все повторения|каждую неделю)\b", normalized))
+    all_scope = bool(re.search(r"\b(?:все|всех)\b", normalized)) and not series_scope
+    scope = "series" if series_scope else ("all" if all_scope else "one")
+    data: dict[str, Any] = {"query": None, "scope": scope}
+    remainder = re.sub(r"^.*?" + verb_pattern, "", normalized, count=1).strip()
+    target_date = resolve_date(remainder, now)
+    clock = _extract_clock_time(remainder)
+    if action == "update_event":
+        if target_date:
+            data["new_date"] = target_date.isoformat()
+        if clock:
+            data["new_time"] = clock
+        rename = re.search(r"\b(?:переименуй|название)\b.*?\bв\s+(.+)$", normalized)
+        if rename:
+            data["new_title"] = clean_event_title(rename.group(1).strip(" .!?"))
+            remainder = remainder[:remainder.find(" в ")] if " в " in remainder else remainder
+    else:
+        if target_date:
+            data["target_date"] = target_date.isoformat()
+        if clock:
+            data["target_time"] = clock
+    remainder = re.sub(r"\b(?:на|к|в)\s+(?:сегодня|завтра|послезавтра)\b", " ", remainder)
+    remainder = re.sub(r"\b(?:на|к|в)\s+\d{1,2}[./]\d{1,2}(?:[./]\d{4})?\b", " ", remainder)
+    remainder = re.sub(r"\b(?:на|к|в)\s+\d{1,2}\s+[а-яё]+(?:\s+\d{4})?\b", " ", remainder)
+    remainder = re.sub(r"\b(?:на|к|в)?\s*\d{1,2}:\d{2}\b", " ", remainder)
+    query = re.sub(r"\b(?:слушай|пожалуйста|а|мне|задачу|задача|встречу|встреча|событие|дело|как|выполненной|выполненным|сделанной|сделанным|все|всех|всю|серию|повторения|эту|этот|это|час|часа|часов)\b", " ", remainder)
+    query = " ".join(query.strip(" .!?").split())
+    data["query"] = query or None
+    return {"action": action, "data": data, "reply_text": None}
+
+
+def _normalize_spoken_time(text: str) -> str:
+    number_words = {
+        "ноль": 0, "нуль": 0, "один": 1, "одна": 1, "одно": 1, "два": 2, "две": 2, "три": 3,
+        "четыре": 4, "пять": 5, "шесть": 6, "семь": 7, "восемь": 8, "девять": 9, "десять": 10,
+        "одиннадцать": 11, "двенадцать": 12, "тринадцать": 13, "четырнадцать": 14, "пятнадцать": 15,
+        "шестнадцать": 16, "семнадцать": 17, "восемнадцать": 18, "девятнадцать": 19, "двадцать": 20,
+        "двадцать один": 21, "двадцать два": 22, "двадцать три": 23, "тридцать": 30, "сорок": 40,
+        "пятьдесят": 50,
+    }
+    tokens = list(re.finditer(r"\b[а-яё]+\b", text))
+    for index, token in enumerate(tokens):
+        hour = number_words.get(token.group())
+        if hour is None or hour > 23:
+            continue
+        previous = text[:token.start()].rstrip().split()
+        marker = previous[-1] if previous else ""
+        hour_end = token.end()
+        minute_index = index + 1
+        if hour in {20} and index + 1 < len(tokens) and number_words.get(tokens[index + 1].group()) in {1, 2, 3} and text[hour_end:tokens[index + 1].start()].strip() == "":
+            hour += number_words[tokens[index + 1].group()]
+            hour_end = tokens[index + 1].end()
+            minute_index += 1
+        following = tokens[minute_index:minute_index + 2]
+        minute = None
+        end = hour_end
+        if len(following) == 2 and text[hour_end:following[0].start()].strip() == "" and text[following[0].end():following[1].start()].strip() == "":
+            tens = number_words.get(following[0].group())
+            units = number_words.get(following[1].group())
+            if tens is not None and units is not None and 0 <= tens <= 5 and 0 <= units <= 9:
+                minute = tens * 10 + units
+                end = following[1].end()
+        if minute is None and minute_index < len(tokens):
+            next_token = tokens[minute_index]
+            value = number_words.get(next_token.group())
+            if value is not None and text[hour_end:next_token.start()].strip() == "" and value <= 59:
+                minute = value
+                end = next_token.end()
+        if minute is None:
+            after = text[hour_end:hour_end + 18]
+            if marker in {"в", "к", "на"} or re.match(r"\s*(?:час(?:а|ов)?|утра|вечера|дня|ночи)\b", after):
+                minute = 0
+                hour_unit = re.match(r"\s*час(?:а|ов)?\b", after)
+                if hour_unit:
+                    end = hour_end + hour_unit.end()
+                modifier = re.match(r"\s*(?:час(?:а|ов)?\s+)?(утра|вечера|дня|ночи)\b", after)
+                if modifier:
+                    if modifier.group(1) == "вечера" and hour < 12:
+                        hour += 12
+                    end = hour_end + modifier.end()
+        if minute is not None and minute <= 59:
+            return f"{text[:token.start()]}{hour:02d}:{minute:02d}{text[end:]}"
+    return text
+
+
+def _is_natural_clarification(text: str) -> bool:
+    return bool(re.search(r"\b(?:уточни|уточните|уточнить|поняла|понял|когда и где|нужно ли добавить)\b", text.casefold()))
+
+
+def _add_recurrence(payload: dict[str, Any], user_text: str) -> dict[str, Any]:
+    if payload.get("action") not in {"create_event", "clarify"}:
+        return payload
+    normalized = user_text.casefold()
+    frequency = None
+    if re.search(r"\bкажд(?:ый|ую|ое)\s+(?:день|утро|вечер|сутки)\b|\bежедневно\b", normalized):
+        frequency = "daily"
+    elif re.search(r"\bкажд(?:ую|ый|ое)\s+(?:недел\w*|понедельник|вторник|среду|четверг|пятницу|субботу|воскресенье)\b|\bеженедельно\b", normalized):
+        frequency = "weekly"
+    elif re.search(r"\bкажд(?:ый|ую)\s+месяц\b|\bежемесячно\b", normalized):
+        frequency = "monthly"
+    if frequency:
+        data = dict(payload.get("data") or {})
+        is_clarify = payload["action"] == "clarify"
+        target = dict(data.get("partial_data") or {}) if is_clarify else data
+        target["recurrence"] = frequency
+        count_match = re.search(r"\b(\d{1,2})\s+(?:раз[а]?|повторени[яй]|дн(?:я|ей)|недел[ьиь]?|месяц(?:а|ев)?)\b", normalized)
+        if count_match:
+            target["recurrence_count"] = int(count_match.group(1))
+        title = str(target.get("title") or "")
+        title = re.sub(r"\bкажд(?:ый|ую|ое)\s+(?:день|утро|вечер|сутки|недел\w*|понедельник|вторник|среду|четверг|пятницу|субботу|воскресенье|месяц)\b", " ", title, flags=re.IGNORECASE)
+        title = re.sub(r"\bежедневно|еженедельно|ежемесячно\b", " ", title, flags=re.IGNORECASE)
+        title = re.sub(r"\b\d{1,2}\s+(?:раз[а]?|повторени[яй]|дн(?:я|ей)|недел[ьиь]?|месяц(?:а|ев)?)\b", " ", title, flags=re.IGNORECASE)
+        title = " ".join(title.split()).strip(" ,.!?")
+        if title:
+            target["title"] = title
+        else:
+            target.pop("title", None)
+        if is_clarify:
+            data["partial_data"] = target
+        elif not title:
+            start = datetime.fromisoformat(data["start_time"])
+            payload.update(action="clarify", data={"missing_field": "title", "partial_data": {"scheduled_date": start.date().isoformat(), "scheduled_time": start.strftime("%H:%M"), "recurrence": frequency, "recurrence_count": target.get("recurrence_count")}}, reply_text="Что именно нужно повторять?")
+            return payload
+        payload["data"] = data
+    return payload
 

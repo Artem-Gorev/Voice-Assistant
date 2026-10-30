@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 from datetime import datetime
 import numpy as np
 
@@ -59,7 +60,7 @@ class VoiceAssistant:
 
     def process_input(self, user_input: str | np.ndarray, sample_rate: int | None = None) -> str:
         if isinstance(user_input, str):
-            normalized_text = " ".join(user_input.split())
+            normalized_text = self._clean_input(user_input)
             if not normalized_text:
                 raise ValueError("Текст запроса не должен быть пустым")
             return normalized_text
@@ -71,6 +72,16 @@ class VoiceAssistant:
 
         raise TypeError("Вход должен быть строкой текста или numpy-массивом аудио")
 
+    @staticmethod
+    def _clean_input(text: str) -> str:
+        normalized = re.sub(r"[\ud800-\udfff]", "", " ".join(text.split()))
+        prefix = re.compile(r"^\[\s*(?:INFO|DEBUG|WARNING|ERROR)\s*\]\s*Пользователь:\s*", re.IGNORECASE)
+        while match := prefix.match(normalized):
+            normalized = normalized[match.end():].strip()
+        if re.match(r"^\[\s*(?:INFO|DEBUG|WARNING|ERROR)\s*\]", normalized, re.IGNORECASE):
+            raise ValueError("Введена строка лога. Напишите только запрос к ассистенту.")
+        return normalized
+
     def record_audio(self) -> np.ndarray:
         if self._recognizer is None or self._audio_handler is None:
             raise RuntimeError("Аудиовход не включён. Создайте VoiceAssistant с voice_input=True.")
@@ -80,23 +91,21 @@ class VoiceAssistant:
         if not self._speak:
             raise RuntimeError("Голосовой ответ не включён. Создайте VoiceAssistant с speak=True.")
 
-        from backend.text_normalizer import normalize_text_for_speech
-
-        speech_text = normalize_text_for_speech(text)
-        audio = self._synthesizer.synthesize(speech_text)
+        audio = self._synthesizer.synthesize(text)
         self._audio_handler.play_audio(audio.to_wav_bytes())
 
     def run(self, text: str, text_output: bool = True, voice_output: bool = False) -> str:
-        normalized_text = " ".join(text.split())
+        normalized_text = self._clean_input(text)
         if not normalized_text:
             raise ValueError("Текст запроса не должен быть пустым")
 
         self._logger.info(f"Пользователь: {normalized_text}")
-        current_datetime = datetime.now().astimezone()
-        result = self._llm.process(normalized_text, session_id="cli", current_dt=current_datetime)
-
-        self._logger.debug(f"[LLM]:\n{result.model_dump_json(indent=2)}")
-        response = self._dispatcher.process_llm_response(result.model_dump(mode="json"))
+        response = self._dispatcher.process_followup(normalized_text, session_id="cli")
+        if response is None:
+            current_datetime = datetime.now().astimezone()
+            result = self._llm.process(normalized_text, session_id="cli", current_dt=current_datetime)
+            self._logger.debug(f"[LLM]:\n{result.model_dump_json(indent=2)}")
+            response = self._dispatcher.process_llm_response(result.model_dump(mode="json"), session_id="cli")
         if text_output:
             self._logger.info(f"Ассистент: {response}")
         if voice_output:
