@@ -15,8 +15,7 @@ DateTimeSpan = tuple[datetime | None, datetime | None]
 
 
 class NLUSimulator:
-    def process(self, user_text: str, session: DialogSession | None,
-                now: datetime) -> dict[str, Any]:
+    def process(self, user_text: str, session: DialogSession | None, now: datetime) -> dict[str, Any]:
         text_lower = user_text.lower().strip()
 
         if session and session.missing_field == "start_time":
@@ -30,7 +29,7 @@ class NLUSimulator:
                     else ("сегодня" if start_dt.date() == now.date() else start_dt.strftime("%d.%m"))
                 )
                 end_str = f" до {end_dt.strftime('%H:%M')}" if end_dt else ""
-                reply = f"Запланировал '{title}' на {date_label} с {time_str}{end_str}."
+                reply = f"Добавила «{title}» в расписание на {date_label} с {time_str}{end_str}."
                 return {
                     "action": "create_event",
                     "data": {
@@ -141,7 +140,7 @@ class NLUSimulator:
                     "description": None,
                 },
                 "reply_text": (
-                    f"Запланировал {clean_title.lower()} на {date_label} "
+                    f"Добавила «{clean_title}» в расписание на {date_label} "
                     f"с {time_str}{end_str}."
                 ),
             }
@@ -150,7 +149,7 @@ class NLUSimulator:
             "action": "chat",
             "data": {},
             "reply_text": (
-                "Привет! Я голосовой ассистент. Могу запланировать встречу, "
+                "Привет! Я голосовая ассистентка. Могу запланировать встречу, "
                 "показать расписание или найти событие."
             ),
         }

@@ -60,11 +60,7 @@ class TestLLMOrchestrator(unittest.TestCase):
             CreateEventData(title="   ", start_time="2026-10-28T14:00:00")
 
         with self.assertRaises(ValidationError):
-            CreateEventData(
-                title="Встреча в прошлом",
-                start_time="2026-10-28T15:00:00",
-                end_time="2026-10-28T14:00:00",
-            )
+            CreateEventData(title="Встреча в прошлом", start_time="2026-10-28T15:00:00", end_time="2026-10-28T14:00:00")
 
         with self.assertRaises(ValidationError):
             ListEventsData(date="28-10-2026")
