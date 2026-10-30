@@ -2,7 +2,6 @@ import threading
 from time import perf_counter
 
 import numpy as np
-from tone import DecoderType, StreamingCTCPipeline
 
 from .base import SpeechRecognizer
 from .config import TOneConfig
@@ -26,6 +25,8 @@ class TOneRecognizer(SpeechRecognizer):
                 return self._pipeline
 
             try:
+                from tone import DecoderType, StreamingCTCPipeline
+
                 decoder_type = DecoderType.GREEDY if self._config.decoder == "greedy" else DecoderType.BEAM_SEARCH
                 self._logger.info(f"[STT]: Загрузка модели T-one '{self._config.model_id}'")
                 self._pipeline = StreamingCTCPipeline.from_hugging_face(decoder_type=decoder_type)
