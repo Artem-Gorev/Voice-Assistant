@@ -74,7 +74,7 @@ class VoiceAssistant:
 
     @staticmethod
     def _clean_input(text: str) -> str:
-        normalized = " ".join(text.split())
+        normalized = re.sub(r"[\ud800-\udfff]", "", " ".join(text.split()))
         prefix = re.compile(r"^\[\s*(?:INFO|DEBUG|WARNING|ERROR)\s*\]\s*Пользователь:\s*", re.IGNORECASE)
         while match := prefix.match(normalized):
             normalized = normalized[match.end():].strip()
@@ -91,10 +91,7 @@ class VoiceAssistant:
         if not self._speak:
             raise RuntimeError("Голосовой ответ не включён. Создайте VoiceAssistant с speak=True.")
 
-        from backend.text_normalizer import normalize_text_for_speech
-
-        speech_text = normalize_text_for_speech(text)
-        audio = self._synthesizer.synthesize(speech_text)
+        audio = self._synthesizer.synthesize(text)
         self._audio_handler.play_audio(audio.to_wav_bytes())
 
     def run(self, text: str, text_output: bool = True, voice_output: bool = False) -> str:

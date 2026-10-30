@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from backend.ai_service.llm import LLMConfig, LLMOrchestrator
 from backend.dal.event_repository import EventRepository
 from backend.services import CollisionProcessor, CommandDispatcher
+from backend.text_normalizer import normalize_text_for_speech
 from backend.voice_assistant import VoiceAssistant
 
 
@@ -96,6 +97,25 @@ class EventManagementTests(unittest.TestCase):
         self.assertIn("Удалила", self.send("2"))
         self.assertEqual(len(self.repo.events), 1)
 
+    def test_ambiguous_target_accepts_ordinal_phrase(self):
+        titles = ("Купить билеты", "Купить билеты до конца недели", "Купить билеты до конца месяца", "Купить билеты на концерт")
+        for hour, title in enumerate(titles, 9):
+            self.create(title, f"2026-10-31T{hour:02d}:00:00")
+
+        response = self.dispatcher.process_llm_response({"action": "delete_event", "data": {"query": "Купить билеты"}}, "test")
+        self.assertIn("Уточните", response)
+        self.assertIn("Удалила", self.send("Четвёртое событие"))
+        self.assertNotIn("Купить билеты на концерт", [event["text"] for event in self.repo.events.values()])
+
+    def test_ambiguous_target_accepts_title_fragment(self):
+        self.create("Купить билеты до конца недели", "2026-10-31T09:00:00")
+        self.create("Купить билеты до конца месяца", "2026-10-31T10:00:00")
+
+        response = self.dispatcher.process_llm_response({"action": "complete_event", "data": {"query": "Купить билеты"}}, "test")
+        self.assertIn("часть названия", response)
+        self.assertIn("Отметила", self.send("Событие до конца месяца"))
+        self.assertEqual(self.repo.events[2]["status"], "completed")
+
     def test_conflict_offers_and_accepts_alternative(self):
         self.create("Встреча с Иваном", "2026-10-31T13:00:00")
         self.assertIn("Перенести", self.create("Встреча с командой", "2026-10-31T13:00:00"))
@@ -104,6 +124,38 @@ class EventManagementTests(unittest.TestCase):
         self.assertEqual(len(self.repo.events), 2)
         times = sorted(event["time"] for event in self.repo.events.values())
         self.assertEqual(times, [datetime(2026, 10, 31, 13).time(), datetime(2026, 10, 31, 14).time()])
+
+    def test_conflict_accepts_natural_confirmation(self):
+        self.create("Обед", "2026-10-31T13:00:00")
+        self.create("Созвон с командой", "2026-10-31T13:00:00")
+        response = self.send("Да перенеси")
+        self.assertIn("Добавила", response)
+        self.assertEqual(self.repo.events[2]["time"].hour, 14)
+
+    def test_conflict_accepts_another_time(self):
+        self.create("Обед", "2026-10-31T13:00:00")
+        self.create("Созвон с командой", "2026-10-31T13:00:00")
+        response = self.send("Нет, лучше на 15:00")
+        self.assertIn("Добавила", response)
+        self.assertEqual(self.repo.events[2]["time"].hour, 15)
+
+    def test_reschedule_accepts_natural_confirmation(self):
+        self.create("Ужин", "2026-10-31T20:00:00")
+        self.create("Ужин", "2026-10-31T21:00:00")
+        self.assertIn("Перенесла", self.send("Да, перенеси"))
+        self.assertEqual(self.repo.events[1]["time"].hour, 21)
+
+    def test_generic_meeting_asks_title_and_keeps_time(self):
+        response = '{"action":"create_event","data":{"title":"Встречу на субботу","start_time":"2026-10-31T13:00:00"}}'
+        llm = LLMOrchestrator(config=LLMConfig())
+        llm._client = SimpleNamespace(chat=lambda _: SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=response))]))
+        first = llm.process("Поставь встречу на субботу в 13:00", session_id="meeting", current_dt=self.now)
+        self.assertEqual(first.action, "clarify")
+        self.assertIn("С кем", first.reply_text)
+        second = llm.process("с Иваном", session_id="meeting", current_dt=self.now)
+        self.assertEqual(second.action, "create_event")
+        self.assertEqual(second.data["title"], "Встреча с Иваном")
+        self.assertEqual(second.data["start_time"], "2026-10-31T13:00:00")
 
     def test_recurrence_and_series_update(self):
         self.create("Тренировка", "2026-10-30T18:00:00", "weekly", 3)
@@ -203,6 +255,18 @@ class EventManagementTests(unittest.TestCase):
     def test_pasted_log_prefix_is_removed(self):
         clean = VoiceAssistant._clean_input("[ INFO ] Пользователь: [ INFO ] Пользователь: добавь ужин завтра")
         self.assertEqual(clean, "добавь ужин завтра")
+
+    def test_damaged_unicode_is_removed_from_user_input(self):
+        self.assertEqual(VoiceAssistant._clean_input("Четвертое событ\udcd0ие"), "Четвертое событие")
+
+    def test_tts_normalizer_converts_list_numbers_dates_and_times(self):
+        text = "2. Купить билеты — 31.10 в 09:00; 4. Купить билеты — 05.11 в 13:00. Назовите номер."
+        normalized = normalize_text_for_speech(text)
+        self.assertIn("второе", normalized)
+        self.assertIn("четвёртое", normalized)
+        self.assertIn("тридцать первого октября", normalized)
+        self.assertIn("в девять часов", normalized)
+        self.assertNotRegex(normalized, r"\d")
 
 
 if __name__ == "__main__":

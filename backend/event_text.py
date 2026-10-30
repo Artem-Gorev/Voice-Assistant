@@ -33,6 +33,7 @@ def clean_event_title(title: str) -> str:
     cleaned = re.sub(
         r"\b(?:на\s+)?(?:сегодня|завтра|послезавтра)\b", " ", cleaned, flags=re.IGNORECASE
     )
+    cleaned = re.sub(r"\b(?:на|в)\s+(?:(?:эту|следующую)\s+)?(?:понедельник|вторник|среду|четверг|пятницу|субботу|воскресенье)\b", " ", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"\s+", " ", cleaned).strip(" ,.!?;:—-\t\n")
     cleaned = re.sub(r"^(?:на|в|к|с)\s+", "", cleaned, flags=re.IGNORECASE)
     return cleaned[0].upper() + cleaned[1:] if cleaned else ""
@@ -46,4 +47,5 @@ def _looks_like_command_title(title: str) -> bool:
         or bool(re.match(r"^(?:мне\s+)?(?:эту\s+)?задачу\b", normalized))
         or bool(re.match(r"^(?:(?:я\s+)?хочу|(?:я\s+)?планирую|собираюсь)\b", normalized))
         or bool(re.search(r"\b(?:что\s+у\s+меня|\d{1,2}\s+[а-яё]+|\d{1,2}[./]\d{1,2}|\d{1,2}:\d{2}|завтра|сегодня|послезавтра)\b", normalized))
+        or bool(re.search(r"\b(?:на|в)\s+(?:(?:эту|следующую)\s+)?(?:понедельник|вторник|среду|четверг|пятницу|субботу|воскресенье)\b", normalized))
     )

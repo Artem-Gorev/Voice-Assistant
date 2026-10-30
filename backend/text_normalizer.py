@@ -17,6 +17,9 @@ _MONTHS_GENITIVE = (
     "января", "февраля", "марта", "апреля", "мая", "июня", "июля",
     "августа", "сентября", "октября", "ноября", "декабря",
 )
+_LIST_ORDINALS = (
+    "первое", "второе", "третье", "четвёртое", "пятое", "шестое", "седьмое", "восьмое", "девятое", "десятое",
+)
 
 _UNITS = (
     "ноль", "один", "два", "три", "четыре", "пять", "шесть", "семь", "восемь", "девять",
@@ -101,6 +104,13 @@ def _count_to_words(match: re.Match[str]) -> str:
     return f"{_integer_to_words(value)} {form}"
 
 
+def _list_number_to_words(match: re.Match[str]) -> str:
+    value = int(match.group(1))
+    if 1 <= value <= len(_LIST_ORDINALS):
+        return f"{_LIST_ORDINALS[value - 1]}. "
+    return f"{_integer_to_words(value)}. "
+
+
 def _minute_noun(value: int) -> str:
     last_two = value % 100
     if 11 <= last_two <= 14:
@@ -135,7 +145,13 @@ def _time_to_words(match: re.Match[str]) -> str:
     if hour > 23 or minute > 59:
         return match.group(0)
     if hour == 0 and minute == 0:
-        return f"{prefix} полночь".strip()
+        midnight = {"с": "полуночи", "до": "полуночи", "к": "полуночи"}.get(prefix, "полночь")
+        return f"{prefix} {midnight}".strip()
+
+    if hour == 0:
+        hour_word = {"с": "полуночи", "до": "полуночи", "к": "полуночи"}.get(prefix, "полночь")
+        minute_phrase = f" {_number_to_words(minute)} {_minute_noun(minute)}"
+        return f"{prefix} {hour_word}{minute_phrase}".strip()
 
     if prefix in {"с", "до"}:
         hour_word = f"{_HOUR_GENITIVE[hour]} часов"
@@ -176,6 +192,8 @@ def normalize_text_for_speech(text: str) -> str:
             f"{_year_to_words(value.year)}"
         ).strip()
 
+    text = re.sub(r"(?<![\d.])(\d{1,2})\.\s+(?=[а-яёa-z«])", _list_number_to_words, text, flags=re.IGNORECASE)
+    text = re.sub(r"\s*;\s*", ". ", text)
     text = re.sub(r"\b\d{4}-\d{2}-\d{2}\b", replace_iso_date, text)
     text = re.sub(r"\b(\d{1,2})\.(\d{1,2})(?:\.(\d{4}))?\b", replace_date, text)
     text = re.sub(r"\b(в|к|с|до)?\s*(\d{1,2}):(\d{2})\b", _time_to_words, text, flags=re.IGNORECASE)

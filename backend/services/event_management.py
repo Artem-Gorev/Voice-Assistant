@@ -1,9 +1,10 @@
 import calendar
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from typing import Any
 from uuid import uuid4
 
+from backend.ai_service.llm.temporal import resolve_date
 from backend.dal.nlp_utils import lemmatize_text
 
 
@@ -23,41 +24,42 @@ class EventManagementService:
         if not pending:
             return None
 
-        normalized = text.casefold().strip(" .!?")
-        if normalized in {"нет", "не надо", "отмена", "отмени"}:
+        normalized = re.sub(r"[\ud800-\udfff]", "", text.casefold().replace("ё", "е"))
+        normalized = " ".join(re.sub(r"[,;.!?]+", " ", normalized).split())
+        if re.match(r"^(?:нет\b|не надо\b|не нужно\b|не переноси\b|не ставь\b|отмена\b|отмени\b|оставь как есть\b)", normalized) and not re.search(r"\b(?:лучше|вместо|другое)\b", normalized):
             self._pending.pop(session_id, None)
             return "Хорошо, действие отменено."
+
+        if pending["kind"] in {"conflict", "reschedule"}:
+            if re.match(r"^(?:какие|что у меня|найди|покажи|расскажи|привет|удали|отметь|поставь|запланируй|создай|перенеси\s+(?:встречу|задачу|событие))\b", normalized):
+                self._pending.pop(session_id, None)
+                return None
+            proposed = datetime.fromisoformat(pending["data"]["start_time" if pending["action"] == "create_event" else "new_start_time"]) if pending["kind"] == "conflict" else datetime.fromisoformat(pending["start_time"])
+            new_date = resolve_date(normalized, datetime.now().astimezone())
+            new_time = _followup_time(normalized)
+            if new_date or new_time:
+                chosen = datetime.combine(new_date or proposed.date(), new_time or proposed.time())
+                if pending["kind"] == "reschedule":
+                    self._pending.pop(session_id, None)
+                    return self.process("update_event", {"event_id": pending["event_id"], "new_start_time": chosen.isoformat()}, session_id)
+                updated = dict(pending["data"])
+                if pending["action"] == "create_event":
+                    duration = datetime.fromisoformat(updated["end_time"]) - proposed
+                    updated.update(start_time=chosen.isoformat(), end_time=(chosen + duration).isoformat())
+                else:
+                    updated.update(new_start_time=chosen.isoformat(), new_date=None, new_time=None)
+                self._pending.pop(session_id, None)
+                return self.process(pending["action"], updated, session_id)
+            if re.fullmatch(r"(?:да|ага|конечно|хорошо|ок|окей|давай|согласен|согласна|подходит|подтверждаю|перенеси|переносим)(?:\s+(?:перенеси|переносим|поставь|добавь|давай))?", normalized):
+                self._pending.pop(session_id, None)
+                if pending["kind"] == "reschedule":
+                    return self.process("update_event", {"event_id": pending["event_id"], "new_start_time": proposed.isoformat()}, session_id)
+                return self.process(pending["action"], pending["data"], session_id)
+            return f"Предлагаю {proposed:%d.%m в %H:%M}. Можно согласиться, назвать другое время или отменить."
 
         if re.match(r"^(?:какие|что у меня|найди|покажи|поставь|запланируй|создай|расскажи|привет|перенеси|удали|отметь)\b", normalized):
             self._pending.pop(session_id, None)
             return None
-
-        if pending["kind"] == "conflict":
-            if normalized in {"да", "давай", "согласен", "согласна", "подходит"}:
-                self._pending.pop(session_id, None)
-                return self.process(pending["action"], pending["data"], session_id)
-
-            clock = re.search(r"\b(\d{1,2}):(\d{2})\b", normalized)
-            if clock and int(clock.group(1)) < 24 and int(clock.group(2)) < 60:
-                updated = dict(pending["data"])
-                start = datetime.fromisoformat(updated["start_time"] if pending["action"] == "create_event" else updated["new_start_time"])
-                replacement = start.replace(hour=int(clock.group(1)), minute=int(clock.group(2)))
-
-                if pending["action"] == "create_event":
-                    end = datetime.fromisoformat(updated["end_time"])
-                    updated["start_time"] = replacement.isoformat()
-                    updated["end_time"] = (replacement + (end - start)).isoformat()
-                else:
-                    updated["new_start_time"] = replacement.isoformat()
-                self._pending.pop(session_id, None)
-                return self.process(pending["action"], updated, session_id)
-            return "Подтвердите предложенное время словом «да» или назовите другое время в формате 14:30."
-
-        if pending["kind"] == "reschedule":
-            if normalized in {"да", "давай", "согласен", "согласна", "подходит"}:
-                self._pending.pop(session_id, None)
-                return self.process("update_event", {"event_id": pending["event_id"], "new_start_time": pending["start_time"]}, session_id)
-            return "Перенести существующее событие? Ответьте «да» или «нет»."
 
         if pending["kind"] == "count":
             count = _spoken_count(normalized)
@@ -74,11 +76,14 @@ class EventManagementService:
             candidates = pending["candidates"]
             match = re.search(r"\b(\d+)\b", normalized)
             ordinal = _spoken_count(normalized)
-            index = int(match.group(1)) if match else ordinal
+            index = len(candidates) if "последн" in normalized else (int(match.group(1)) if match else ordinal)
             selected = candidates[index - 1] if index and 1 <= index <= len(candidates) else None
 
             if selected is None:
-                selected = next((event for event in candidates if normalized in event["text"].casefold()), None)
+                ignored_words = {"выбрать", "вариант", "номер", "событие", "задача", "встреча", "это", "этот", "тот", "который"}
+                choice_words = set(lemmatize_text(normalized).split()) - ignored_words
+                matches = [event for event in candidates if choice_words and choice_words <= set(lemmatize_text(event["text"]).split())]
+                selected = matches[0] if len(matches) == 1 else None
             if selected is None:
                 return self._choice_question(candidates)
             self._pending.pop(session_id, None)
@@ -263,7 +268,7 @@ class EventManagementService:
     @staticmethod
     def _choice_question(events: list[dict[str, Any]]) -> str:
         options = "; ".join(f"{index}. {event['text']} — {event['date']:%d.%m} в {event['time']:%H:%M}" for index, event in enumerate(events[:5], 1))
-        return f"Уточните, какое событие имеется в виду: {options}? Назовите номер."
+        return f"Уточните, какое событие имеется в виду: {options}? Назовите номер, например «четвёртое событие», или часть названия."
 
     @staticmethod
     def _occurrences(start: datetime, end: datetime, frequency: str | None, count: int) -> list[tuple[datetime, datetime]]:
@@ -295,11 +300,46 @@ def _spoken_count(text: str) -> int | None:
     if digits := re.search(r"\b(\d{1,2})\b", text):
         return int(digits.group(1))
     tokens = re.findall(r"[а-яё]+", text)
+    ordinal_patterns = (
+        (r"^перв(?:ый|ая|ое|ую|ого|ому|ым|ом)$", 1),
+        (r"^втор(?:ой|ая|ое|ую|ого|ому|ым|ом)$", 2),
+        (r"^трет(?:ий|ья|ье|ью|ьего|ьему|ьим|ьем)$", 3),
+        (r"^четверт(?:ый|ая|ое|ую|ого|ому|ым|ом)$", 4),
+        (r"^пят(?:ый|ая|ое|ую|ого|ому|ым|ом)$", 5),
+        (r"^шест(?:ой|ая|ое|ую|ого|ому|ым|ом)$", 6),
+        (r"^седьм(?:ой|ая|ое|ую|ого|ому|ым|ом)$", 7),
+        (r"^восьм(?:ой|ая|ое|ую|ого|ому|ым|ом)$", 8),
+        (r"^девят(?:ый|ая|ое|ую|ого|ому|ым|ом)$", 9),
+        (r"^десят(?:ый|ая|ое|ую|ого|ому|ым|ом)$", 10),
+    )
     for index, token in enumerate(tokens):
+        for pattern, ordinal_value in ordinal_patterns:
+            if re.match(pattern, token):
+                return ordinal_value
         if token not in words:
             continue
         value = words[token]
         if value in {20, 30, 40} and index + 1 < len(tokens) and tokens[index + 1] in words and 1 <= words[tokens[index + 1]] <= 9:
             value += words[tokens[index + 1]]
         return value
+    return None
+
+
+def _followup_time(text: str) -> time | None:
+    numeric = re.search(r"\b(\d{1,2}):(\d{2})\b", text)
+    if numeric:
+        hour, minute = int(numeric.group(1)), int(numeric.group(2))
+        return time(hour, minute) if hour < 24 and minute < 60 else None
+    for match in re.finditer(r"\b(?:в|на|к)\s+([а-яё]+|\d{1,2})(?:\s+час(?:а|ов)?)?(?:\s+(утра|вечера|дня|ночи))?\b", text):
+        hour = _spoken_count(match.group(1))
+        if hour is None or hour > 23:
+            continue
+        modifier = match.group(2)
+        if hour <= 12 and modifier is None:
+            continue
+        if modifier in {"вечера", "дня"} and hour < 12:
+            hour += 12
+        if modifier in {"утра", "ночи"} and hour == 12:
+            hour = 0
+        return time(hour, 0)
     return None

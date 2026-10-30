@@ -294,6 +294,8 @@ class LLMOrchestrator(LanguageModel):
             partial = {
                 "scheduled_date": scheduled_date.isoformat() if scheduled_date else None,
                 "start_time": scheduled_start.isoformat() if scheduled_start else None,
+                "scheduled_time": scheduled_start.strftime("%H:%M") if scheduled_start else None,
+                "event_kind": "Встреча" if "встреч" in title.casefold() or "встреч" in user_text.casefold() else None,
             }
             data["missing_field"] = "title"
             data["partial_data"] = partial
@@ -390,6 +392,12 @@ class LLMOrchestrator(LanguageModel):
 
     @staticmethod
     def _title_question(partial_data: dict[str, Any], now: datetime) -> str:
+        if partial_data.get("event_kind") == "Встреча":
+            scheduled_date = partial_data.get("scheduled_date")
+            scheduled_time = partial_data.get("scheduled_time")
+            detail = f" на {date.fromisoformat(scheduled_date):%d.%m}" if scheduled_date else ""
+            detail += f" в {scheduled_time}" if scheduled_time else ""
+            return f"С кем или по какому поводу встреча{detail}?"
         scheduled_date = partial_data.get("scheduled_date")
         if scheduled_date:
             day = datetime.fromisoformat(scheduled_date).date()
@@ -440,6 +448,8 @@ class LLMOrchestrator(LanguageModel):
             return LLMOrchestrator._create_event_result(partial["title"], start)
         if session.missing_field == "title":
             title = clean_event_title(user_text.strip(" \t\n.,!?«»\"'"))
+            if partial.get("event_kind") == "Встреча" and re.match(r"^(?:с|со|по|для)\b", title.casefold()):
+                title = f"Встреча {title}"
             if not _is_placeholder_title(title):
                 partial["title"] = title
 
