@@ -1,3 +1,8 @@
+.web
+*.py[cod]
+*.db
+assets/external/
+.states
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

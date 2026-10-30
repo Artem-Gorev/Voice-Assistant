@@ -12,3 +12,4 @@ omegaconf>=2.3,<3.0
 onnxruntime
 pyctcdecode
 miniaudio
+reflex==0.10.1

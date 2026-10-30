@@ -1,7 +1,7 @@
 import reflex as rx
 
 config = rx.Config(
-    app_name="web_app",
+    app_name="frontend",
     env_file=".env",
     plugins=[
         rx.plugins.SitemapPlugin(),
