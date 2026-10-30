@@ -228,3 +228,7 @@ __marimo__/
 
 # System
 .DS_Store
+
+# Reflex
+.web/
+.states/
