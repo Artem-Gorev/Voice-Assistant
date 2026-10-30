@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 from datetime import datetime
 import numpy as np
 
@@ -59,7 +60,7 @@ class VoiceAssistant:
 
     def process_input(self, user_input: str | np.ndarray, sample_rate: int | None = None) -> str:
         if isinstance(user_input, str):
-            normalized_text = " ".join(user_input.split())
+            normalized_text = self._clean_input(user_input)
             if not normalized_text:
                 raise ValueError("Текст запроса не должен быть пустым")
             return normalized_text
@@ -70,6 +71,16 @@ class VoiceAssistant:
             return self._transcribe_audio(user_input, sample_rate)
 
         raise TypeError("Вход должен быть строкой текста или numpy-массивом аудио")
+
+    @staticmethod
+    def _clean_input(text: str) -> str:
+        normalized = " ".join(text.split())
+        prefix = re.compile(r"^\[\s*(?:INFO|DEBUG|WARNING|ERROR)\s*\]\s*Пользователь:\s*", re.IGNORECASE)
+        while match := prefix.match(normalized):
+            normalized = normalized[match.end():].strip()
+        if re.match(r"^\[\s*(?:INFO|DEBUG|WARNING|ERROR)\s*\]", normalized, re.IGNORECASE):
+            raise ValueError("Введена строка лога. Напишите только запрос к ассистенту.")
+        return normalized
 
     def record_audio(self) -> np.ndarray:
         if self._recognizer is None or self._audio_handler is None:
@@ -87,7 +98,7 @@ class VoiceAssistant:
         self._audio_handler.play_audio(audio.to_wav_bytes())
 
     def run(self, text: str, text_output: bool = True, voice_output: bool = False) -> str:
-        normalized_text = " ".join(text.split())
+        normalized_text = self._clean_input(text)
         if not normalized_text:
             raise ValueError("Текст запроса не должен быть пустым")
 

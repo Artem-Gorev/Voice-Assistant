@@ -118,13 +118,17 @@ class EventChangeData(BaseModel):
     new_date: date | None = None
     new_time: str | None = None
     new_title: str | None = None
-    scope: Literal["one", "series"] = "one"
+    target_date: date | None = None
+    target_time: str | None = None
+    scope: Literal["one", "series", "all"] = "one"
 
 
 class EventTargetData(BaseModel):
     query: str | None = None
     event_id: int | None = None
-    scope: Literal["one", "series"] = "one"
+    target_date: date | None = None
+    target_time: str | None = None
+    scope: Literal["one", "series", "all"] = "one"
 
 
 class LLMResult(BaseModel):

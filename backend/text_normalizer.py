@@ -26,7 +26,8 @@ _TEENS = (
     "пятнадцать", "шестнадцать", "семнадцать", "восемнадцать", "девятнадцать",
 )
 _TENS = {
-    2: "двадцать", 3: "тридцать", 4: "сорок", 5: "пятьдесят",
+    2: "двадцать", 3: "тридцать", 4: "сорок", 5: "пятьдесят", 6: "шестьдесят",
+    7: "семьдесят", 8: "восемьдесят", 9: "девяносто",
 }
 _HOUR_GENITIVE = (
     "нуля", "одного", "двух", "трех", "четырех", "пяти", "шести", "семи",
@@ -63,6 +64,41 @@ def _number_to_words(value: int) -> str:
         return _TEENS[value - 10]
     tens, units = divmod(value, 10)
     return _TENS[tens] if units == 0 else f"{_TENS[tens]} {_UNITS[units]}"
+
+
+def _integer_to_words(value: int) -> str:
+    if value >= 1_000_000:
+        return str(value)
+    if value >= 1_000:
+        thousands, remainder = divmod(value, 1_000)
+        last_two = thousands % 100
+        last = thousands % 10
+        noun = "тысяч" if 11 <= last_two <= 14 or last == 0 or last >= 5 else ("тысяча" if last == 1 else "тысячи")
+        prefix = "одна" if thousands == 1 else ("две" if thousands == 2 else _integer_to_words(thousands))
+        suffix = _integer_to_words(remainder) if remainder else ""
+        return f"{prefix} {noun} {suffix}".strip()
+    if value < 100:
+        return _number_to_words(value)
+    hundreds = ("", "сто", "двести", "триста", "четыреста", "пятьсот", "шестьсот", "семьсот", "восемьсот", "девятьсот")
+    remainder = value % 100
+    return f"{hundreds[value // 100]} {_number_to_words(remainder)}".strip() if remainder else hundreds[value // 100]
+
+
+def _count_to_words(match: re.Match[str]) -> str:
+    value = int(match.group(1))
+    noun = match.group(2).lower()
+    last_two = value % 100
+    last = value % 10
+    if noun.startswith("повтор"):
+        forms = ("повторение", "повторения", "повторений")
+    elif noun.startswith("событ"):
+        forms = ("событие", "события", "событий")
+    elif noun.startswith("встреч"):
+        forms = ("встреча", "встречи", "встреч")
+    else:
+        forms = ("задача", "задачи", "задач")
+    form = forms[2] if 11 <= last_two <= 14 or last == 0 or last >= 5 else (forms[0] if last == 1 else forms[1])
+    return f"{_integer_to_words(value)} {form}"
 
 
 def _minute_noun(value: int) -> str:
@@ -142,4 +178,6 @@ def normalize_text_for_speech(text: str) -> str:
 
     text = re.sub(r"\b\d{4}-\d{2}-\d{2}\b", replace_iso_date, text)
     text = re.sub(r"\b(\d{1,2})\.(\d{1,2})(?:\.(\d{4}))?\b", replace_date, text)
-    return re.sub(r"\b(в|к|с|до)?\s*(\d{1,2}):(\d{2})\b", _time_to_words, text, flags=re.IGNORECASE)
+    text = re.sub(r"\b(в|к|с|до)?\s*(\d{1,2}):(\d{2})\b", _time_to_words, text, flags=re.IGNORECASE)
+    text = re.sub(r"\b(\d+)\s+(повторени[яй]|событи[яй]|встреч[аиу]|задач[аиу])\b", _count_to_words, text, flags=re.IGNORECASE)
+    return re.sub(r"(?<![\w.])(\d+)(?![\w.])", lambda match: _integer_to_words(int(match.group(1))), text)

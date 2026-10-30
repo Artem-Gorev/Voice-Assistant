@@ -59,6 +59,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             except (EOFError, KeyboardInterrupt):
                 logger.info("Завершение работы по запросу пользователя.")
                 break
+            except ValueError as error:
+                logger.error(f"{error}")
             except Exception as error:
                 logger.exception(f"Ошибка обработки запроса: {error}")
 

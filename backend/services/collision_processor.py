@@ -1,3 +1,4 @@
+import re
 from datetime import date, datetime, time, timedelta
 from typing import Any
 
@@ -19,6 +20,8 @@ class CollisionProcessor:
         excluded = exclude_ids or set()
         for event in self.repo.get_events_by_date_range(start.date() - timedelta(days=1), end.date()):
             if event.get("id") in excluded or event.get("status") == "completed":
+                continue
+            if re.match(r"^\[\s*(?:INFO|DEBUG|WARNING|ERROR)\s*\]", str(event.get("text") or ""), re.IGNORECASE):
                 continue
             event_start = event.get("start_time")
             if not isinstance(event_start, datetime):

@@ -1,6 +1,6 @@
 import logging
 import os
-from datetime import date, time, datetime
+from datetime import date, time, datetime, timezone
 from typing import Any
 import psycopg2
 from psycopg2.extras import RealDictCursor
@@ -78,10 +78,10 @@ class EventRepository:
         )
         start_val = data.get("start_time")
         if isinstance(start_val, datetime) and start_val.tzinfo is not None:
-            start_val = start_val.astimezone().replace(tzinfo=None)
+            start_val = start_val.astimezone(timezone.utc).replace(tzinfo=None)
         end_val = data.get("end_time")
         if isinstance(end_val, datetime) and end_val.tzinfo is not None:
-            end_val = end_val.astimezone().replace(tzinfo=None)
+            end_val = end_val.astimezone(timezone.utc).replace(tzinfo=None)
         ev_date, ev_time = _extract_date_time(start_val)
         if ev_date is None and ("event_date" in data or "date" in data):
             ev_date = _normalize_date(data.get("event_date") or data.get("date"))
@@ -109,10 +109,10 @@ class EventRepository:
 
         query = (
             "SELECT * FROM events "
-            "WHERE start_time::date = %(target_date)s AND start_time > %(target_dt)s "
+            "WHERE (start_time AT TIME ZONE 'UTC')::date = %(target_date)s AND start_time > %(target_dt)s "
             "ORDER BY start_time ASC LIMIT 1;"
         )
-        params = {"target_date": t_date, "target_dt": target_dt}
+        params = {"target_date": t_date, "target_dt": target_dt.replace(tzinfo=timezone.utc)}
         try:
             with self._get_cursor() as cur:
                 cur.execute(query, params)
@@ -130,10 +130,10 @@ class EventRepository:
 
         query = (
             "SELECT * FROM events "
-            "WHERE start_time::date = %(target_date)s AND start_time < %(target_dt)s "
+            "WHERE (start_time AT TIME ZONE 'UTC')::date = %(target_date)s AND start_time < %(target_dt)s "
             "ORDER BY start_time DESC LIMIT 1;"
         )
-        params = {"target_date": t_date, "target_dt": target_dt}
+        params = {"target_date": t_date, "target_dt": target_dt.replace(tzinfo=timezone.utc)}
         try:
             with self._get_cursor() as cur:
                 cur.execute(query, params)
@@ -149,7 +149,7 @@ class EventRepository:
 
         query = (
             "SELECT * FROM events "
-            "WHERE start_time::date = %(target_date)s "
+            "WHERE (start_time AT TIME ZONE 'UTC')::date = %(target_date)s "
             "ORDER BY start_time ASC;"
         )
         params = {"target_date": t_date}
@@ -170,7 +170,7 @@ class EventRepository:
 
         query = (
             "SELECT * FROM events "
-            "WHERE start_time::date BETWEEN %(start_date)s AND %(end_date)s "
+            "WHERE (start_time AT TIME ZONE 'UTC')::date BETWEEN %(start_date)s AND %(end_date)s "
             "ORDER BY start_time ASC;"
         )
         params = {"start_date": s_date, "end_date": e_date}
@@ -253,8 +253,8 @@ class EventRepository:
             "normalized_text": normalized_text,
             "event_type": event_type,
             "status": status,
-            "start_time": start_dt,
-            "end_time": end_dt,
+            "start_time": start_dt.replace(tzinfo=timezone.utc) if start_dt.tzinfo is None else start_dt.astimezone(timezone.utc),
+            "end_time": end_dt.replace(tzinfo=timezone.utc) if end_dt.tzinfo is None else end_dt.astimezone(timezone.utc),
             "embedding": embedding_val,
             "series_id": data.get("series_id"),
         }
@@ -292,7 +292,10 @@ class EventRepository:
             params.extend([title, lemmatize_text(title), classify_event(title)])
         if start_time is not None:
             fields.extend(["start_time = %s", "end_time = %s"])
-            params.extend([start_time, end_time or start_time])
+            new_start = start_time.replace(tzinfo=timezone.utc) if start_time.tzinfo is None else start_time.astimezone(timezone.utc)
+            new_end = end_time or start_time
+            new_end = new_end.replace(tzinfo=timezone.utc) if new_end.tzinfo is None else new_end.astimezone(timezone.utc)
+            params.extend([new_start, new_end])
         if not fields:
             return
         params.append(event_id)

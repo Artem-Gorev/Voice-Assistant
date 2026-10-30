@@ -1,9 +1,12 @@
 import logging
 import unittest
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
+from types import SimpleNamespace
 
 from backend.ai_service.llm import LLMConfig, LLMOrchestrator
+from backend.dal.event_repository import EventRepository
 from backend.services import CollisionProcessor, CommandDispatcher
+from backend.voice_assistant import VoiceAssistant
 
 
 class MemoryRepository:
@@ -144,6 +147,62 @@ class EventManagementTests(unittest.TestCase):
         self.assertEqual(result.action, "create_event")
         self.assertEqual(result.data["recurrence"], "weekly")
         self.assertEqual(result.data["recurrence_count"], 4)
+
+    def test_existing_event_does_not_claim_it_was_added(self):
+        self.create("Ужин", "2026-11-01T09:00:00")
+        response = self.create("Ужин", "2026-11-01T09:00:00")
+        self.assertIn("уже есть", response)
+        self.assertEqual(len(self.repo.events), 1)
+
+    def test_same_title_on_same_day_offers_reschedule(self):
+        self.create("Ужин", "2026-11-01T20:00:00")
+        response = self.create("Ужин", "2026-11-01T21:00:00")
+        self.assertIn("Перенести", response)
+        self.assertEqual(len(self.repo.events), 1)
+        self.assertIn("Перенесла", self.send("да"))
+        self.assertEqual(self.repo.events[1]["time"].hour, 21)
+
+    def test_cancel_voice_command_filters_date_and_spoken_time(self):
+        self.create("Встреча с командой", "2026-10-31T18:00:00")
+        self.create("Встреча с командой", "2026-11-01T18:00:00")
+        response = self.send("мне нужно отменить встречу с командой на завтра в восемнадцать ноль ноль")
+        self.assertIn("Удалила", response)
+        self.assertEqual(len(self.repo.events), 1)
+        self.assertEqual(self.repo.events[2]["date"], date(2026, 11, 1))
+
+    def test_move_by_title_uses_new_date_as_destination(self):
+        self.create("Встреча с командой", "2026-10-30T18:00:00")
+        response = self.send("перенеси встречу с командой на завтра")
+        self.assertIn("Перенесла", response)
+        self.assertEqual(self.repo.events[1]["date"], date(2026, 10, 31))
+
+    def test_delete_all_matching_meetings(self):
+        self.create("Встреча с командой", "2026-10-31T18:00:00")
+        self.create("Встреча с командой", "2026-11-01T18:00:00")
+        response = self.send("удали все встречи с командой")
+        self.assertIn("2 событий", response)
+        self.assertFalse(self.repo.events)
+
+    def test_ambiguous_spoken_hour_requires_clarification(self):
+        response = '{"action":"create_event","data":{"title":"Ужин","start_time":"2026-10-31T09:00:00"}}'
+        llm = LLMOrchestrator(config=LLMConfig())
+        llm._client = SimpleNamespace(chat=lambda _: SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=response))]))
+        first = llm.process("Добавь ужин завтра в девять часов", session_id="hour", current_dt=self.now)
+        self.assertEqual(first.action, "clarify")
+        self.assertIn("21:00", first.reply_text)
+        second = llm.process("вечером", session_id="hour", current_dt=self.now)
+        self.assertEqual(second.action, "create_event")
+        self.assertEqual(second.data["start_time"], "2026-10-31T21:00:00")
+
+    def test_database_time_keeps_existing_wall_clock(self):
+        repo = EventRepository.__new__(EventRepository)
+        repo._logger = logging.getLogger("event-management-tests")
+        row = {"id": 1, "original_text": "Ужин", "start_time": datetime(2026, 11, 1, 12, tzinfo=timezone(timedelta(hours=3))), "end_time": None}
+        self.assertEqual(repo._format_row(row)["time"].hour, 9)
+
+    def test_pasted_log_prefix_is_removed(self):
+        clean = VoiceAssistant._clean_input("[ INFO ] Пользователь: [ INFO ] Пользователь: добавь ужин завтра")
+        self.assertEqual(clean, "добавь ужин завтра")
 
 
 if __name__ == "__main__":

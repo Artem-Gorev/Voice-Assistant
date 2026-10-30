@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from datetime import datetime, time
+import re
 
 from backend.event_text import clean_event_title
 from backend.services.event_management import EventManagementService
@@ -9,6 +10,8 @@ def _remove_duplicate_events(events: list[dict]) -> list[dict]:
     unique_events = []
     seen = set()
     for event in events:
+        if re.match(r"^\[\s*(?:INFO|DEBUG|WARNING|ERROR)\s*\]", str(event.get("text") or ""), re.IGNORECASE):
+            continue
         key = (
             str(event.get("date")),
             str(event.get("time")),
