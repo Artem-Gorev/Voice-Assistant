@@ -21,12 +21,10 @@ logger = logging.getLogger("TTV_Sample")
 def parser():
     arg_parser = argparse.ArgumentParser(description="Семантический поиск моделью cointegrated/rubert-tiny2",
                                          formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    arg_parser.add_argument("-q", "--query", type=str, default=DEFAULT_TEXT,
-                            help="Поисковый запрос")
+    arg_parser.add_argument("-q", "--query", type=str, default=DEFAULT_TEXT, help="Поисковый запрос")
     arg_parser.add_argument("-t", "--texts", nargs="+", default=DEFAULT_TEXTS, help="Тексты, по которым выполняется поиск")
     arg_parser.add_argument("-k", "--top-k", type=int, default=3, help="Количество результатов")
-    arg_parser.add_argument("-d", "--device", choices=["auto", "cpu", "cuda", "mps"], default="auto",
-                            help="Устройство для инференса")
+    arg_parser.add_argument("-d", "--device", choices=["auto", "cpu", "cuda", "mps"], default="auto", help="Устройство для инференса")
     arg_parser.add_argument("-b", "--batch-size", type=int, default=16, help="Размер пакета")
     arg_parser.add_argument("-ml", "--max-length", type=int, default=None, help="Максимальная длина токенизированного текста")
     arg_parser.add_argument("--local-files-only", action="store_true", help="Использовать только локальный кэш модели")
