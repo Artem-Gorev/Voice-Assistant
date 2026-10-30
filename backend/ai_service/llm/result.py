@@ -48,16 +48,46 @@ class CreateEventData(BaseModel):
 
 
 class ListEventsData(BaseModel):
-    date: str = Field(description="Format YYYY-MM-DD")
+    date: str | None = Field(default=None, description="Single day in YYYY-MM-DD format")
+    date_from: str | None = Field(default=None, description="Range start in YYYY-MM-DD format")
+    date_to: str | None = Field(default=None, description="Range end in YYYY-MM-DD format")
+    time_from: str | None = Field(default=None, description="Optional time range start (HH:MM)")
+    time_to: str | None = Field(default=None, description="Optional time range end (HH:MM)")
 
-    @field_validator("date")
+    @field_validator("date", "date_from", "date_to")
     @classmethod
-    def validate_date(cls, v: str) -> str:
+    def validate_date(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
         try:
             date.fromisoformat(v)
-        except Exception as e:
-            raise ValueError(f"date must be in valid format (YYYY-MM-DD): {e}")
+        except ValueError as error:
+            raise ValueError(f"date must be in valid format (YYYY-MM-DD): {error}") from error
         return v
+
+    @field_validator("time_from", "time_to")
+    @classmethod
+    def validate_time(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        try:
+            datetime.strptime(value, "%H:%M")
+        except ValueError as error:
+            raise ValueError("time must be in HH:MM format") from error
+        return value
+
+    @model_validator(mode="after")
+    def validate_date_selector(self) -> "ListEventsData":
+        if self.date is not None:
+            if self.date_from is not None or self.date_to is not None:
+                raise ValueError("Use either date or the date_from/date_to range")
+            return self
+
+        if self.date_from is None or self.date_to is None:
+            raise ValueError("Provide date or both date_from and date_to")
+        if date.fromisoformat(self.date_from) > date.fromisoformat(self.date_to):
+            raise ValueError("date_from must be on or before date_to")
+        return self
 
 
 class SearchEventsData(BaseModel):

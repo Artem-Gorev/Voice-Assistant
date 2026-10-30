@@ -89,8 +89,7 @@ class EventRepository:
 
     _map_row = _format_row
 
-    def get_next_event(self, target_date: date | str,
-                       target_time: time | str | datetime) -> dict[str, Any] | None:
+    def get_next_event(self, target_date: date | str, target_time: time | str | datetime) -> dict[str, Any] | None:
         self._logger.info("[DAL]: Запрос на получение следующего события")
         t_date = _normalize_date(target_date)
         t_time = _normalize_time(target_time)
@@ -111,8 +110,7 @@ class EventRepository:
             self._logger.info(f"[DAL]: Ошибка при получении следующего события: {e}")
             raise
 
-    def get_previous_event(self, target_date: date | str,
-                           target_time: time | str | datetime) -> dict[str, Any] | None:
+    def get_previous_event(self, target_date: date | str, target_time: time | str | datetime) -> dict[str, Any] | None:
         self._logger.info("[DAL]: Запрос на получение предыдущего события")
         t_date = _normalize_date(target_date)
         t_time = _normalize_time(target_time)
@@ -153,8 +151,7 @@ class EventRepository:
             self._logger.info(f"[DAL]: Ошибка при получении событий по дате: {e}")
             raise
 
-    def get_events_by_date_range(self, start_date: date | str,
-                                 end_date: date | str) -> list[dict[str, Any]]:
+    def get_events_by_date_range(self, start_date: date | str, end_date: date | str) -> list[dict[str, Any]]:
         self._logger.info("[DAL]: Запрос на получение событий по диапазону дат")
         s_date = _normalize_date(start_date)
         e_date = _normalize_date(end_date)
@@ -225,6 +222,13 @@ class EventRepository:
         else:
             embedding_val = embedding
 
+        duplicate_query = """
+            SELECT id
+            FROM events
+            WHERE lemmatized_text = %(lemmatized_text)s
+              AND start_time = %(start_time)s
+            LIMIT 1;
+        """
         query = """
             INSERT INTO events (original_text, lemmatized_text, event_type, status, start_time, end_time, embedding)
             VALUES (%(original_text)s, %(lemmatized_text)s, %(event_type)s, %(status)s, %(start_time)s, %(end_time)s, %(embedding)s);
@@ -242,6 +246,10 @@ class EventRepository:
         }
         try:
             with self._get_cursor() as cur:
+                cur.execute(duplicate_query, params)
+                if cur.fetchone():
+                    self._logger.info(f"[DAL]: Пропущено повторное событие '{raw_text}' на {start_dt}")
+                    return
                 cur.execute(query, params)
             self.conn.commit()
         except Exception as e:
@@ -250,24 +258,19 @@ class EventRepository:
 
     def get_all_events(self) -> list[dict[str, Any]]:
         self._logger.info("[DAL]: Получение всех событий для семантического анализа")
-        query = "SELECT id, text, normalized_text, start_time, embedding FROM events ORDER BY id ASC;"
+        query = (
+            "SELECT id, original_text, lemmatized_text, start_time "
+            "FROM events ORDER BY id ASC;"
+        )
         try:
             with self._get_cursor() as cur:
                 cur.execute(query)
                 rows = cur.fetchall()
                 desc = getattr(cur, "description", None)
-                results = []
-                for r in (rows or []):
-                    if isinstance(r, dict):
-                        results.append(dict(r))
-                    elif hasattr(r, "_asdict"):
-                        results.append(r._asdict())
-                    elif desc:
-                        col_names = [d[0] for d in desc]
-                        results.append(dict(zip(col_names, r)))
-                    else:
-                        results.append(r)
-                return results
+                return [
+                    self._format_row(row, desc)
+                    for row in (rows or [])
+                ]
         except Exception as e:
             self._logger.info(f"[DAL]: Ошибка при получении всех событий: {e}")
             raise

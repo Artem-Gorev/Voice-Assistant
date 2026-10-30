@@ -31,6 +31,5 @@ class LanguageModel(ABC):
         return implementation(config=config or LLMConfig(provider=key), logger=logger)
 
     @abstractmethod
-    def process(self, user_text: str, session_id: str = "default",
-                current_dt: datetime | None = None) -> LLMResult:
+    def process(self, user_text: str, session_id: str = "default", current_dt: datetime | None = None) -> LLMResult:
         pass
