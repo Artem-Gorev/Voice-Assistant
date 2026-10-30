@@ -1,13 +1,20 @@
 import re
 
 import pymorphy3
+
+
 MORPH = pymorphy3.MorphAnalyzer()
-
-
-MEETING_TRIGGERS = [
-    "встреч", "созвон", "демо", "обсудить", "планёрк", "планерк",
-    "синхрон", "интервью", "митинг"
-]
+MEETING_TRIGGERS = (
+    "встреч",
+    "созвон",
+    "демо",
+    "обсудить",
+    "планёрк",
+    "планерк",
+    "синхрон",
+    "интервью",
+    "митинг",
+)
 
 
 def lemmatize_text(text: str | None) -> str:
