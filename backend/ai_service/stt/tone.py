@@ -34,6 +34,12 @@ class TOneRecognizer(SpeechRecognizer):
                 raise RuntimeError(f"Не удалось загрузить T-one: {error}")
         return self._pipeline
 
+    def warmup(self) -> None:
+        """Download/load the recognizer and initialize its inference path."""
+        samples = np.zeros(self._config.target_sample_rate, dtype=np.int32)
+        with self._inference_lock:
+            self._load_pipeline().forward_offline(samples)
+
     def transcribe(self, audio, sample_rate: int) -> Transcription:
         samples = self._prepare_audio(audio, sample_rate)
         duration = len(samples) / self._config.target_sample_rate

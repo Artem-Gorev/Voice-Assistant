@@ -334,7 +334,10 @@ class LLMOrchestrator(LanguageModel):
 
     @staticmethod
     def _normalize_create_intent(payload: dict[str, Any], user_text: str, now: datetime) -> dict[str, Any]:
-        if payload.get("action") not in {"chat", "clarify"} or not _is_create_intent(user_text):
+        action = payload.get("action")
+        if action not in {"chat", "clarify", "create_event"}:
+            return payload
+        if action != "create_event" and not _is_create_intent(user_text):
             return payload
 
         data = dict(payload.get("data") or {})
@@ -347,8 +350,26 @@ class LLMOrchestrator(LanguageModel):
         if _is_placeholder_title(title):
             title = ""
 
+        model_start = _parse_datetime(data.get("start_time"))
+        partial_start = _parse_datetime(partial.get("start_time"))
         target_date = resolve_date(user_text, now, for_event=True)
+        if target_date is None and model_start:
+            target_date = model_start.date()
+        if target_date is None and partial_start:
+            target_date = partial_start.date()
+        scheduled_date = partial.get("scheduled_date") or data.get("scheduled_date")
+        if target_date is None and scheduled_date:
+            try:
+                target_date = date.fromisoformat(scheduled_date)
+            except (TypeError, ValueError):
+                target_date = None
         clock_time = _extract_clock_time(user_text)
+        if clock_time is None and model_start:
+            clock_time = model_start.strftime("%H:%M")
+        if clock_time is None and partial.get("scheduled_time"):
+            clock_time = str(partial["scheduled_time"])
+        if clock_time is None and data.get("scheduled_time"):
+            clock_time = str(data["scheduled_time"])
         if target_date and clock_time and title:
             start_dt = datetime.combine(target_date, datetime.strptime(clock_time, "%H:%M").time())
             return LLMOrchestrator._create_event_result(title, start_dt)
@@ -357,6 +378,7 @@ class LLMOrchestrator(LanguageModel):
             "title": title or None,
             "scheduled_date": target_date.isoformat() if target_date else None,
             "scheduled_time": clock_time,
+            "event_kind": "Встреча" if "встреч" in user_text.casefold() or "встреч" in str(data.get("title") or "").casefold() else None,
         }
         if not title:
             missing_field = "title"

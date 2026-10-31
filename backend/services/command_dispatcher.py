@@ -73,6 +73,9 @@ class ListEventsHandler(BaseActionHandler):
             target_date = datetime.fromisoformat(data["date"]).date()
             events = self.repo.get_events_by_date(target_date)
             period_label = target_date.strftime("%d.%m.%Y")
+        elif not data.get("date_from") and not data.get("date_to"):
+            events = [event for event in self.repo.get_all_events() if event.get("status") != "completed"]
+            period_label = "в вашем списке"
         else:
             start_date = datetime.fromisoformat(data["date_from"]).date()
             end_date = datetime.fromisoformat(data["date_to"]).date()
@@ -97,9 +100,11 @@ class ListEventsHandler(BaseActionHandler):
         if not events:
             if data.get("date"):
                 return f"На {period_label} у вас ничего не запланировано."
+            if not data.get("date_from") and not data.get("date_to"):
+                return "У вас пока нет незавершённых задач."
             return f"За период {period_label} у вас ничего не запланировано."
 
-        text = "Вот ваши планы: "
+        text = "Вот ваши задачи: " if not data.get("date") and not data.get("date_from") else "Вот ваши планы: "
         for e in events:
             t = e['time'].strftime("%H:%M") if e.get('time') else ""
             event_date = e.get("date")

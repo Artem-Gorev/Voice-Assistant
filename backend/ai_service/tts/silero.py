@@ -43,6 +43,10 @@ class SileroSynthesizer(SpeechSynthesizer):
 
         return self._model
 
+    def warmup(self) -> None:
+        """Load Silero and run a short synthesis to initialize inference."""
+        self.synthesize("Голосовой помощник готов к работе.")
+
     def synthesize(self, text: str) -> SpeechAudio:
         normalized_text = normalize_text_for_speech(" ".join((text or "").split()))
         if not normalized_text:
