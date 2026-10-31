@@ -1,10 +1,7 @@
-.web
-.states
+.web/
+.states/
+reflex.lock/
+__pycache__/
+*.py[cod]
 *.db
 assets/external/
-*.py[cod]
-__pycache__/
-.states/
-.web/
-reflex.lock/
-old_frontend.py

@@ -387,11 +387,15 @@ class State(rx.State):
                         if (AudioContextClass) {
                             window.__voiceAudioContext = new AudioContextClass();
                             window.__voiceAnalyser = window.__voiceAudioContext.createAnalyser();
-                            window.__voiceAnalyser.fftSize = 128;
+                            window.__voiceAnalyser.fftSize = 256;
+                            window.__voiceAnalyser.smoothingTimeConstant = 0.84;
+                            window.__voiceAnalyser.minDecibels = -88;
+                            window.__voiceAnalyser.maxDecibels = -24;
                             window.__voiceAudioContext.createMediaStreamSource(stream)
                                 .connect(window.__voiceAnalyser);
                             window.__voiceFrequencyData =
                                 new Uint8Array(window.__voiceAnalyser.frequencyBinCount);
+                            window.__voiceWaveHeights = new Array(36).fill(3);
                         }
                     } catch (visualError) {
                         console.warn("Audio visualization unavailable:", visualError);
@@ -409,13 +413,22 @@ class State(rx.State):
                     const animateWave = () => {
                         if (!window.__voiceAnalyser || !window.__voiceFrequencyData) return;
                         window.__voiceAnalyser.getByteFrequencyData(window.__voiceFrequencyData);
-                        for (let i = 0; i < 72; i++) {
+                        const barCount = 36;
+                        const highestVoiceBin = Math.min(36, window.__voiceFrequencyData.length - 1);
+                        for (let i = 0; i < barCount; i++) {
                             const bar = document.getElementById("voice-wave-" + i);
                             if (!bar) continue;
-                            const value = window.__voiceFrequencyData[
-                                i % window.__voiceFrequencyData.length
-                            ] || 0;
-                            bar.style.height = (4 + value / 255 * 24) + "px";
+                            const position = i / (barCount - 1);
+                            const bin = Math.max(1, Math.round(
+                                1 + Math.pow(position, 1.4) * (highestVoiceBin - 1)
+                            ));
+                            const energy = (window.__voiceFrequencyData[bin] || 0) / 255;
+                            const target = 3 + Math.pow(energy, 0.72) * 22;
+                            const previous = window.__voiceWaveHeights[i] || 3;
+                            const easing = target > previous ? 0.3 : 0.14;
+                            const height = previous + (target - previous) * easing;
+                            window.__voiceWaveHeights[i] = height;
+                            bar.style.height = height + "px";
                         }
                         window.__voiceAnimationFrame = requestAnimationFrame(animateWave);
                     };
@@ -502,7 +515,7 @@ class State(rx.State):
 
                     window.__voiceRecordingId = null;
 
-                    for (let i = 0; i < 72; i++) {
+                    for (let i = 0; i < 36; i++) {
 
                         const bar = document.getElementById("voice-wave-" + i);
 
@@ -597,7 +610,7 @@ class State(rx.State):
                     window.__voiceRecordingId = null;
                     window.__voiceUploadQueue = Promise.resolve();
                     window.__voiceUploadError = null;
-                    for (let i = 0; i < 72; i++) {
+                    for (let i = 0; i < 36; i++) {
                         const bar = document.getElementById("voice-wave-" + i);
                         if (bar) bar.style.height = "4px";
                     }

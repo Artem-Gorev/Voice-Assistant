@@ -121,9 +121,9 @@ glass_card(
                                         rx.box(id=f"voice-wave-{i}", width="3px", height="4px",
                                                min_height="4px",
                                                background="linear-gradient(180deg, #b5cbff, #6e91f1)",
-                                               border_radius="full", transition="height 90ms ease",
+                                               border_radius="full", transition="height 70ms linear",
                                                box_shadow="0 0 7px rgba(123,158,255,0.35)")
-                                        for i in range(72)],
+                                        for i in range(36)],
                                         width="100%", height="28px", align="center",
                                         justify="between", spacing="1", flex="1",
                                         min_width="0", overflow="hidden"),
