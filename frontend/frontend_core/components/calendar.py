@@ -429,7 +429,11 @@ def calendar_view():
                                     text_align="center",
                                 ),
 
-                                   width="250px", min_width="250px", text_align="center", flex_shrink="0"),
+                                width="250px",
+                                min_width="250px",
+                                text_align="center",
+                                flex_shrink="0",
+                            ),
 
                             rx.button(rx.icon(tag="chevron-right", size=26), on_click=State.full_next_month,
 
