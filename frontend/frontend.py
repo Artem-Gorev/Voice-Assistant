@@ -433,7 +433,9 @@ def index() -> rx.Component:
                             height="30px", width="30px", margin="auto", font_size="13px", font_weight=rx.cond(day == State.today, "bold", "normal"),
                         )
                     ),
-                    columns="7",
+                    columns="7", width="100%",
+                    grid_template_columns="repeat(7, minmax(0, 1fr))",
+                    gap="8px",
                 ),
                 background="rgba(20, 15, 12, 0.5)", border="1px solid rgba(168, 132, 98, 0.2)", border_radius="12px",
                 padding="15px", margin_bottom="10px", width="100%", aspect_ratio="1 / 1",
