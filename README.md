@@ -187,12 +187,13 @@ flowchart LR
 
 ## 6. Требования к окружению и установка
 
-### Системные требования
+### Системные требования и ключи доступа
 - **ОС**: Linux (Ubuntu 22.04+), macOS (13+), Windows с WSL2.
 - **Python**: 3.11 или 3.12.
 - **Node.js**: 18+ (необходим для сборки фронтенда Reflex).
 - **Docker & Docker Compose**: для запуска базы данных PostgreSQL с векторным расширением.
 - **Системные зависимости**: `ffmpeg` и `portaudio` (для аудио-пайплайна).
+- **API-ключ GigaChat**: необходим для работы NLU и логики ассистента. Бесплатно оформляется в личном кабинете [Сбер Studio](https://developers.sber.ru/studio) (проект «GigaChat API для физических лиц»).
 
 Установка системных зависимостей:
 ```bash
@@ -227,7 +228,10 @@ sudo apt-get update && sudo apt-get install -y portaudio19-dev ffmpeg libsndfile
    ```bash
    cp .env.example .env
    ```
-   Укажите ваш ключ `GIGACHAT_CREDENTIALS` в файле `.env`.
+   Откройте `.env` и вставьте ваш ключ GigaChat:
+   - В поле `GIGACHAT_CREDENTIALS` укажите значение **Authorization Key** (строка base64 из кабинета [Сбер Studio](https://developers.sber.ru/studio) -> проект GigaChat API -> «Авторизационные данные»).
+   - Убедитесь, что параметр `GIGACHAT_SCOPE=GIGACHAT_API_PERS` (для физических лиц).
+   - По умолчанию используется быстрая модель `GIGACHAT_MODEL=GigaChat-3-Lightning`. База данных и остальные параметры в `.env.example` уже преднастроены для локального запуска.
 
 5. **Запуск базы данных PostgreSQL (pgvector):**
    ```bash
