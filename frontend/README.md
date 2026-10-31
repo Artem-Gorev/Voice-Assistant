@@ -1,41 +1,28 @@
 # Frontend
 
-Web UI на Reflex. Фронтенд обращается к FastAPI backend через HTTP-клиент и не содержит бизнес-логику backend.
+Reflex-приложение голосового ассистента.
 
 ## Структура
 
-```text
-frontend/
-├── rxconfig.py                  # конфигурация Reflex и имя приложения
-├── requirements.txt             # зависимости веб-приложения
-├── assets/                      # статические файлы
-└── HGC_26/
-    ├── HGC_26.py                # точка входа: создание Reflex App и регистрация страниц
-    ├── components/              # переиспользуемые UI-компоненты (чат, календарь)
-    ├── pages/                   # сборка экранов из компонентов
-    ├── services/                # HTTP-клиент backend и браузерные аудио-интеграции
-    ├── state/                   # состояние приложения и обработчики UI-событий
-    └── theme/                   # цветовые палитры и общие стили
-```
-
-### Правила зависимостей
-
-- `pages` собирают экран из `components` и состояния.
-- `components` отображают данные и вызывают события состояния.
-- `state` связывает UI-события с `services` и хранит состояние интерфейса.
-- `services` отвечают за внешние границы: HTTP backend и браузерные API.
-- `theme` содержит только визуальные токены и общие стили.
-
-Не размещайте запросы к backend в компонентах и не импортируйте UI из `services`.
+- `app.py` — точка входа Reflex и регистрация страницы.
+- `rxconfig.py` — конфигурация Reflex.
+- `frontend_core/state.py` — состояние интерфейса и обработчики событий.
+- `frontend_core/components/` — компоненты чата и календаря.
+- `frontend_core/assistant_service.py` — загрузка моделей, запросы к ассистенту и TTS.
+- `frontend_core/audio_api.py` — обработка потоковой записи с микрофона.
 
 ## Запуск
 
-Из корня репозитория:
+Из корня репозитория установите зависимости и запустите базу:
 
 ```bash
-source .venv/bin/activate
+python -m pip install -r requirements.txt
+
+docker compose up -d postgres redis
 cd frontend
 reflex run
 ```
 
-Backend должен быть запущен отдельно. По умолчанию frontend использует `http://127.0.0.1:8000/api/v1`; адрес можно переопределить переменной `ASSISTANT_API_URL`.
+Для ответов GigaChat укажите `GIGACHAT_CREDENTIALS` в `.env`. При запуске
+страницы Reflex загружает модели ассистента. Календарь читает события из
+PostgreSQL.

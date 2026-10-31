@@ -68,3 +68,40 @@ class AudioHandler:
             self.logger.info("[AUDIO]: Воспроизведение завершено")
         except Exception as e:
             self.logger.exception(f"[AUDIO]: Ошибка при воспроизведении аудио: {e}")
+
+
+def decode_audio_bytes(audio_bytes: bytes, sample_rate: int = 8_000) -> np.ndarray:
+    """Decode browser-recorded audio (WebM/Opus or MP4/AAC) to mono float audio."""
+    if not audio_bytes:
+        raise ValueError("Получена пустая аудиозапись")
+
+    try:
+        import av
+    except ImportError as error:
+        raise RuntimeError("Для обработки аудио установите PyAV: pip install av") from error
+
+    try:
+        with av.open(io.BytesIO(audio_bytes)) as container:
+            audio_stream = next(
+                (stream for stream in container.streams if stream.type == "audio"),
+                None,
+            )
+            if audio_stream is None:
+                raise ValueError("В записи не найдена аудиодорожка")
+
+            resampler = av.AudioResampler(format="fltp", layout="mono", rate=sample_rate)
+            chunks: list[np.ndarray] = []
+            for frame in container.decode(audio=audio_stream.index):
+                for converted in resampler.resample(frame):
+                    chunks.append(converted.to_ndarray().reshape(-1))
+            for converted in resampler.resample(None):
+                chunks.append(converted.to_ndarray().reshape(-1))
+
+    except ValueError:
+        raise
+    except Exception as error:
+        raise ValueError(f"Не удалось декодировать аудиозапись: {error}") from error
+
+    if not chunks:
+        raise ValueError("В аудиозаписи нет звуковых данных")
+    return np.concatenate(chunks).astype(np.float32, copy=False)
