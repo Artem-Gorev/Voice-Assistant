@@ -114,6 +114,8 @@ class State(rx.State):
     modal_month: int = datetime.now().month
 
     modal_year: int = datetime.now().year
+    full_month: int = datetime.now().month
+    full_year: int = datetime.now().year
 
     today: str = str(datetime.now().day)
 
@@ -161,6 +163,18 @@ class State(rx.State):
         return (days + [""] * 42)[:42]
 
 
+
+    @rx.var
+    def full_month_name(self) -> str:
+        months = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль",
+                  "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
+        return months[self.full_month - 1]
+
+    @rx.var
+    def full_calendar_days(self) -> list[str]:
+        cal = calendar.monthcalendar(self.full_year, self.full_month)
+        days = ["" if day == 0 else str(day) for week in cal for day in week]
+        return (days + [""] * 42)[:42]
 
     @rx.var
 
@@ -263,6 +277,20 @@ class State(rx.State):
         self.selected_day = ""
 
 
+
+    def full_prev_month(self):
+        if self.full_month == 1:
+            self.full_month, self.full_year = 12, self.full_year - 1
+        else:
+            self.full_month -= 1
+        self.selected_day = ""
+
+    def full_next_month(self):
+        if self.full_month == 12:
+            self.full_month, self.full_year = 1, self.full_year + 1
+        else:
+            self.full_month += 1
+        self.selected_day = ""
 
     def select_day(self, day: str):
 
@@ -438,7 +466,7 @@ class State(rx.State):
                     const animateWave = () => {
                         if (!window.__voiceAnalyser || !window.__voiceFrequencyData) return;
                         window.__voiceAnalyser.getByteFrequencyData(window.__voiceFrequencyData);
-                        for (let i = 0; i < 28; i++) {
+                        for (let i = 0; i < 56; i++) {
                             const bar = document.getElementById("voice-wave-" + i);
                             if (!bar) continue;
                             const value = window.__voiceFrequencyData[
@@ -534,7 +562,7 @@ class State(rx.State):
 
                     window.__voiceRecordingId = null;
 
-                    for (let i = 0; i < 28; i++) {
+                    for (let i = 0; i < 56; i++) {
 
                         const bar = document.getElementById("voice-wave-" + i);
 
@@ -621,7 +649,7 @@ class State(rx.State):
                     window.__voiceRecordingId = null;
                     window.__voiceUploadQueue = Promise.resolve();
                     window.__voiceUploadError = null;
-                    for (let i = 0; i < 28; i++) {
+                    for (let i = 0; i < 56; i++) {
                         const bar = document.getElementById("voice-wave-" + i);
                         if (bar) bar.style.height = "4px";
                     }
@@ -643,7 +671,10 @@ class State(rx.State):
 
 
     def set_calendar_mode(self, mode: str):
-
+        if self.calendar_mode != mode:
+            self.week_offset = 0
+            today = date.today()
+            self.full_month, self.full_year = today.month, today.year
         self.calendar_mode = mode
 
 
@@ -661,10 +692,12 @@ class State(rx.State):
 
 
     def go_to_current_week(self):
-
+        today = date.today()
         self.week_offset = 0
-
-        self.calendar_mode = "week"
+        self.full_month = today.month
+        self.full_year = today.year
+        self.selected_date_iso = today.isoformat()
+        self.selected_day = str(today.day)
 
 
 
@@ -742,15 +775,26 @@ class State(rx.State):
 
 
     @rx.var
+    def meeting_event_date(self) -> str:
+        """Дата события «Встреча с командой»."""
+        return date.today().isoformat()
+
+
+    @rx.var
+    def call_event_date(self) -> str:
+        """Дата события «Позвонить Ивану»."""
+        return (date.today() + timedelta(days=1)).isoformat()
+
+
+    @rx.var
     def selected_day_events(self) -> list[str]:
         try:
             chosen = date.fromisoformat(self.selected_date_iso)
         except (TypeError, ValueError):
             chosen = date.today()
-        today = date.today()
-        if chosen == today:
+        if chosen.isoformat() == date.today().isoformat():
             return ["15:00 · Встреча с командой"]
-        if chosen == today + timedelta(days=1):
+        if chosen.isoformat() == (date.today() + timedelta(days=1)).isoformat():
             return ["10:00 · Позвонить Ивану"]
         return []
 
@@ -759,7 +803,7 @@ class State(rx.State):
         if not day:
             return
         try:
-            chosen = date(self.current_year, self.current_month, int(day))
+            chosen = date(self.full_year, self.full_month, int(day))
         except (TypeError, ValueError):
             return
         self.selected_day = str(chosen.day)
@@ -767,27 +811,22 @@ class State(rx.State):
 
 
     def show_chat(self):
-        # При возвращении в чат мини-календарь всегда показывает сегодняшний месяц.
         today = date.today()
-        self.current_month = today.month
-        self.current_year = today.year
-        self.modal_month = today.month
-        self.modal_year = today.year
+        self.current_month, self.current_year = today.month, today.year
+        self.modal_month, self.modal_year = today.month, today.year
         self.today = str(today.day)
         self.selected_day = ""
         self.selected_date_iso = today.isoformat()
         self.week_offset = 0
         self.active_view = "chat"
 
-
     def show_calendar(self):
         today = date.today()
+        self.full_month, self.full_year = today.month, today.year
+        self.week_offset = 0
         self.selected_date_iso = today.isoformat()
         self.selected_day = str(today.day)
-        self.current_month = today.month
-        self.current_year = today.year
         self.active_view = "calendar"
-
 
 
 # --- 3. КОМПОНЕНТЫ ---
@@ -812,7 +851,7 @@ def render_message(msg: dict) -> rx.Component:
 
         color=rx.cond(is_user, "#ffffff", "light-dark(#34415a, #e9efff)"),
 
-        padding="14px 18px", border_radius="20px",
+        padding="14px 18px", border_radius="16px",
 
         border_bottom_right_radius=rx.cond(is_user, "6px", "20px"),
 
@@ -844,7 +883,7 @@ def glass_card(*children, **kwargs):
 
         "border": "1px solid light-dark(rgba(255,255,255,0.78), rgba(255,255,255,0.13))",
 
-        "border_radius": "26px",
+        "border_radius": "18px",
 
         "box_shadow": "0 18px 55px rgba(0,0,0,0.10), inset 0 1px 0 rgba(255,255,255,0.35)",
 
@@ -888,7 +927,7 @@ def nav_button(label: str, icon: str, value: str):
 
                        "1px solid transparent"),
 
-        border_radius="16px", padding="10px 16px", cursor="pointer",
+        border_radius="12px", padding="10px 16px", cursor="pointer",
 
         box_shadow=rx.cond(State.active_view == value, "0 4px 18px rgba(0,0,0,0.08)", "none"),
 
@@ -903,6 +942,8 @@ def nav_button(label: str, icon: str, value: str):
 
 
 def calendar_grid(days, selectable=False, compact=False):
+    shown_month = State.full_month if selectable else State.current_month
+    shown_year = State.full_year if selectable else State.current_year
 
     return rx.grid(
 
@@ -910,7 +951,7 @@ def calendar_grid(days, selectable=False, compact=False):
 
             days,
 
-            lambda day: rx.box(
+            lambda day, index: rx.box(
 
                 rx.text(day, font_size="13px" if compact else "14px",
 
@@ -922,9 +963,9 @@ def calendar_grid(days, selectable=False, compact=False):
 
                     rx.cond(
 
-                        (State.current_month == datetime.now().month) &
+                        (shown_month == datetime.now().month) &
 
-                        (State.current_year == datetime.now().year) &
+                        (shown_year == datetime.now().year) &
 
                         (day == State.today),
 
@@ -946,13 +987,15 @@ def calendar_grid(days, selectable=False, compact=False):
 
                     rx.cond(
 
-                        (State.current_month == datetime.now().month) &
+                        (shown_month == datetime.now().month) &
 
-                        (State.current_year == datetime.now().year) &
+                        (shown_year == datetime.now().year) &
 
                         (day == State.today),
 
-                        "#ffffff", "light-dark(#34415a, #e8edff)")
+                        "#ffffff",
+                        rx.cond((index % 7) >= 5, "#55a9ee",
+                                "light-dark(#34415a, #e8edff)"))
 
                 ),
 
@@ -1005,9 +1048,11 @@ def mini_calendar():
 
             rx.hstack(
 
-                rx.button(rx.icon(tag="chevron-left", size=14), on_click=State.prev_month,
-
-                          size="1", variant="ghost", width="28px", height="28px", flex_shrink="0"),
+                rx.button(rx.icon(tag="chevron-left", size=26), on_click=State.prev_month,
+                          background="light-dark(rgba(226,233,246,0.72), rgba(255,255,255,0.07))",
+                          color="light-dark(#53617a, #d5def0)",
+                          border="1px solid light-dark(rgba(255,255,255,0.7), rgba(255,255,255,0.1))",
+                          border_radius="12px", width="38px", height="38px", flex_shrink="0"),
 
                 rx.text(State.month_name + " " + State.current_year.to_string(),
 
@@ -1015,9 +1060,11 @@ def mini_calendar():
 
                         width="170px", min_width="170px", text_align="center", flex_shrink="0"),
 
-                rx.button(rx.icon(tag="chevron-right", size=14), on_click=State.next_month,
-
-                          size="1", variant="ghost", width="28px", height="28px", flex_shrink="0"),
+                rx.button(rx.icon(tag="chevron-right", size=26), on_click=State.next_month,
+                          background="light-dark(rgba(226,233,246,0.72), rgba(255,255,255,0.07))",
+                          color="light-dark(#53617a, #d5def0)",
+                          border="1px solid light-dark(rgba(255,255,255,0.7), rgba(255,255,255,0.1))",
+                          border_radius="12px", width="38px", height="38px", flex_shrink="0"),
 
                 width="100%", align="center", justify="center", spacing="2", wrap="nowrap"),
 
@@ -1051,7 +1098,7 @@ def workload_panel():
 
         rx.vstack(
 
-            rx.text("ЗАГРУЖЕННОСТЬ НЕДЕЛИ", font_size="10px",
+            rx.text("Загруженность недели", font_size="10px",
 
                     letter_spacing="1.4px", font_weight="700",
 
@@ -1065,26 +1112,19 @@ def workload_panel():
 
                             color="light-dark(#71809c, #aab7d5)"),
 
-                    rx.box(width="100%", height="26px", border_radius="9px",
-
-                           background=["light-dark(rgba(112,151,239,0.10), rgba(112,151,239,0.12))",
-
-                                       "light-dark(rgba(112,151,239,0.72), rgba(112,151,239,0.62))",
-
-                                       "light-dark(rgba(112,151,239,0.10), rgba(112,151,239,0.12))",
-
-                                       "light-dark(rgba(112,151,239,0.72), rgba(112,151,239,0.62))",
-
-                                       "light-dark(rgba(112,151,239,0.10), rgba(112,151,239,0.12))",
-
-                                       "light-dark(rgba(112,151,239,0.10), rgba(112,151,239,0.12))",
-
-                                       "light-dark(rgba(112,151,239,0.10), rgba(112,151,239,0.12))"][i]),
-
-                    rx.text(str(counts[i]), font_size="10px",
-
-                            color="light-dark(#71809c, #aab7d5)"),
-
+                    rx.box(
+                        rx.text(str(counts[i]), font_size="11px", font_weight="700",
+                                color=rx.cond(counts[i] > 0, "#ffffff",
+                                              "light-dark(#71809c, #aab7d5)")),
+                        width="100%", height="28px", border_radius="9px",
+                        display="flex", align_items="center", justify_content="center",
+                        background=["light-dark(rgba(112,151,239,0.10), rgba(112,151,239,0.12))",
+                                    "linear-gradient(145deg, #8eb5ff, #6e8bea)",
+                                    "light-dark(rgba(112,151,239,0.10), rgba(112,151,239,0.12))",
+                                    "linear-gradient(145deg, #8eb5ff, #6e8bea)",
+                                    "light-dark(rgba(112,151,239,0.10), rgba(112,151,239,0.12))",
+                                    "light-dark(rgba(112,151,239,0.10), rgba(112,151,239,0.12))",
+                                    "light-dark(rgba(112,151,239,0.10), rgba(112,151,239,0.12))"][i]),
                     align="center", spacing="1")
 
                 for i in range(7)],
@@ -1107,23 +1147,7 @@ def chat_view():
 
         rx.vstack(
 
-            rx.vstack(
-
-                rx.text("ВАШ AI-АССИСТЕНТ", font_size="10px", letter_spacing="2px",
-
-                        font_weight="700", color="light-dark(#71809c, #aab7d5)"),
-
-                rx.heading("Добро пожаловать", size="6",
-
-                           color="light-dark(#253047, #f3f6ff)"),
-
-                rx.text("Общайтесь текстом или голосом — я рядом, чтобы помочь.",
-
-                        color="light-dark(#68758d, #aab5cb)", font_size="14px"),
-
-                spacing="1", align="start"),
-
-            glass_card(
+glass_card(
 
                 rx.scroll_area(
 
@@ -1139,118 +1163,74 @@ def chat_view():
                 width="100%", flex="1", min_height="0", height="0px", padding="3px",
                 style={"minHeight": "0", "overflow": "hidden", "flex": "1 1 0%"}),
 
-            rx.cond(
-
-                State.is_recording,
-
-                glass_card(
-
-                    rx.hstack(
-
-                        rx.hstack(
-
-                            rx.box(width="7px", height="7px", border_radius="50%",
-
-                                   background="#ff596d", animation="pulse 1s infinite"),
-
-                            rx.text("Запись", font_size="12px", font_weight="700",
-
-                                    color="light-dark(#d43c56, #ff8294)"), spacing="2"),
-
-                        rx.spacer(),
-
-                        rx.text("00:00", id="voice-recording-timer",
-
-                                font_size="13px", font_weight="700",
-
-                                font_family="monospace",
-
-                                color="light-dark(#34415a, #f2f5ff)"),
-
-                        rx.button("Отмена", on_click=State.cancel_recording,
-
-                                  size="1", variant="ghost"),
-
-                        width="100%", align="center"),
-
-                    rx.hstack(*[
-
-                        rx.box(id=f"voice-wave-{i}", width="3px", height="4px",
-
-                               min_height="4px", background="linear-gradient(180deg, #9bb9ff, #6588e8)",
-
-                               border_radius="full", transition="height 80ms linear")
-
-                        for i in range(28)],
-
-                        width="100%", height="34px", align="center",
-
-                        justify="center", spacing="1"),
-
-                    width="100%", padding="6px 10px", gap="3px"),
-
-                rx.fragment()),
-
             glass_card(
 
                 rx.form(
 
                     rx.hstack(
-
-                        rx.text_area(
-
-                            placeholder=rx.cond(State.is_recording, "Идёт запись голосового сообщения…",
-
-                                                "Напишите сообщение или задайте вопрос…"),
-
-                            value=State.user_input, on_change=State.set_user_input,
-
-                            enter_key_submit=True, flex="1",
-
-                            background="transparent !important", border="none !important",
-
-                            box_shadow="none !important", outline="none !important",
-
-                            color="light-dark(#253047, #f2f5ff)",
-
-                            resize="none", rows="1", auto_height=True,
-
-                            height="auto", max_height="132px", overflow_y="auto",
-
-                            min_height="42px", width="100%", padding="10px 4px",
-                            key=State.input_key,
-                            style={"overflowY": "auto", "overflowX": "hidden",
-                                   "resize": "none", "scrollbarWidth": "none",
-                                   "msOverflowStyle": "none",
-                                   "&::-webkit-scrollbar": {"display": "none", "width": "0px"}},
-
-                            disabled=State.is_recording),
-
-                        rx.button(rx.icon(tag=rx.cond(State.is_recording, "square", "mic"), size=18),
-
+                        rx.cond(
+                            State.is_recording,
+                            rx.button(rx.icon(tag="x", size=25), type="button",
+                                      on_click=State.cancel_recording,
+                                      background="light-dark(rgba(225,67,87,0.14), rgba(255,83,105,0.20))",
+                                      color="light-dark(#c52f49, #ff7186)",
+                                      border="2px solid light-dark(rgba(197,47,73,0.48), rgba(255,113,134,0.62))",
+                                      border_radius="12px", width="42px", height="42px",
+                                      box_shadow="0 2px 10px rgba(220,55,80,0.18)"),
+                            rx.button(rx.icon(tag="mic", size=18), type="button",
+                                      on_click=State.start_recording,
+                                      background="light-dark(rgba(103,143,235,0.13), rgba(123,158,255,0.16))",
+                                      color="#82a6ff", border_radius="12px",
+                                      width="42px", height="42px")),
+                        rx.box(
+                            rx.text_area(
+                                placeholder=rx.cond(State.is_recording, "",
+                                                   "Напишите сообщение или задайте вопрос…"),
+                                value=State.user_input, on_change=State.set_user_input,
+                                enter_key_submit=True, flex="1",
+                                background="transparent !important", border="none !important",
+                                box_shadow="none !important", outline="none !important",
+                                color="light-dark(#253047, #f2f5ff)",
+                                resize="none", rows="1", auto_height=True,
+                                height="auto", max_height="132px", overflow_y="auto",
+                                min_height="42px", width="100%", padding="10px 4px",
+                                key=State.input_key,
+                                style={"overflowY": "auto", "overflowX": "hidden",
+                                       "resize": "none", "scrollbarWidth": "none",
+                                       "msOverflowStyle": "none",
+                                       "&::-webkit-scrollbar": {"display": "none", "width": "0px"}},
+                                disabled=State.is_recording),
+                            rx.cond(
+                                State.is_recording,
+                                rx.hstack(*[
+                                    rx.box(id=f"voice-wave-{i}", width="3px", height="4px",
+                                           min_height="4px",
+                                           background="linear-gradient(180deg, #9bb9ff, #6588e8)",
+                                           border_radius="full", transition="height 80ms linear")
+                                    for i in range(56)],
+                                    position="absolute", left="8px", right="8px",
+                                    top="50%", width="auto",
+                                    transform="translateY(-50%)", height="34px",
+                                    align="center", justify="between", spacing="0",
+                                    style={"pointerEvents": "none"}),
+                                rx.fragment()),
+                            position="relative", flex="1", min_width="0",
+                            background="light-dark(rgba(226,233,246,0.24), rgba(255,255,255,0.025))",
+                            border_radius="13px", padding="0 8px"),
+                        rx.cond(
+                            State.is_recording,
+                            rx.text("00:00", id="voice-recording-timer",
+                                    font_size="12px", font_weight="700", font_family="monospace",
+                                    color="light-dark(#d43c56, #ff8294)", min_width="42px"),
+                            rx.fragment()),
+                        rx.button(rx.icon(tag=rx.cond(State.is_recording, "square", "arrow-up"), size=19),
                                   type="button",
-
-                                  on_click=rx.cond(State.is_recording, State.stop_recording, State.start_recording),
-
-                                  background=rx.cond(State.is_recording, "rgba(255,80,100,0.16)",
-
-                                                     "light-dark(rgba(103,143,235,0.13), rgba(123,158,255,0.16))"),
-
-                                  color=rx.cond(State.is_recording, "#ff6478", "#82a6ff"),
-
-                                  border_radius="14px", width="42px", height="42px"),
-
-                        rx.button(rx.icon(tag="arrow-up", size=19), type="submit",
-
-                                  disabled=State.is_recording,
-
-                                  background="linear-gradient(145deg, #8eb5ff, #6e8bea)",
-
-                                  color="#ffffff", border_radius="14px",
-
-                                  width="42px", height="42px"),
-
-                        width="100%", align="end", spacing="2"),
+                                  on_click=rx.cond(State.is_recording, State.stop_recording, State.send_message),
+                                  background=rx.cond(State.is_recording, "#ff596d",
+                                                     "linear-gradient(145deg, #8eb5ff, #6e8bea)"),
+                                  color="#ffffff", border_radius="12px", width="42px", height="42px",
+                                  animation=rx.cond(State.is_recording, "pulse 1s infinite", "none")),
+                        width="100%", align="center", spacing="2"),
 
                     on_submit=State.send_message, width="100%"),
 
@@ -1272,7 +1252,7 @@ def chat_view():
 
                 rx.vstack(
 
-                    rx.text("БЛИЖАЙШИЕ СОБЫТИЯ", font_size="10px",
+                    rx.text("Ближайшие события", font_size="10px",
 
                             letter_spacing="1.4px", font_weight="700",
 
@@ -1347,50 +1327,32 @@ def week_view():
 
             rx.hstack(
 
-                rx.button(rx.icon(tag="chevron-left", size=15), on_click=State.previous_week,
+                rx.button(rx.icon(tag="chevron-left", size=26), on_click=State.previous_week,
 
                           background="light-dark(rgba(226,233,246,0.72), rgba(255,255,255,0.07))",
 
                           color="light-dark(#53617a, #d5def0)", border="1px solid light-dark(rgba(255,255,255,0.7), rgba(255,255,255,0.1))",
 
-                          border_radius="10px", width="32px", height="32px"),
+                          border_radius="12px", width="38px", height="38px"),
 
                 rx.heading(State.week_range_label, size="4",
 
                            color="light-dark(#34415a, #eff3ff)"),
 
-                rx.button(rx.icon(tag="chevron-right", size=15), on_click=State.next_week,
+                rx.button(rx.icon(tag="chevron-right", size=26), on_click=State.next_week,
 
                           background="light-dark(rgba(226,233,246,0.72), rgba(255,255,255,0.07))",
 
                           color="light-dark(#53617a, #d5def0)", border="1px solid light-dark(rgba(255,255,255,0.7), rgba(255,255,255,0.1))",
 
-                          border_radius="10px", width="32px", height="32px"),
+                          border_radius="12px", width="38px", height="38px"),
 
                 rx.spacer(),
-
-                rx.hstack(rx.icon(tag="clock", size=13, color="#7399ef"),
-
-                          rx.text("Сейчас --:--", id="aura-current-time-label", font_size="12px", font_weight="700",
-
-                                  color="light-dark(#53617a, #d5def0)"),
-
-                          background="light-dark(rgba(226,233,246,0.72), rgba(255,255,255,0.07))",
-
-                          border="1px solid light-dark(rgba(255,255,255,0.7), rgba(255,255,255,0.1))",
-
-                          border_radius="10px", padding="7px 10px", spacing="2"),
-
-                rx.button("Сегодня", on_click=State.go_to_current_week,
-
-                          background="linear-gradient(145deg, #8eb5ff, #6e8bea)",
-
-                          color="#ffffff", border_radius="10px", padding="7px 11px"),
 
                 width="100%", align="center"),
 
             rx.hstack(
-                rx.box(width="42px", min_width="42px"),
+                rx.box(width="58px", min_width="58px"),
                 rx.grid(
                     rx.foreach(
                         State.week_days_data,
@@ -1404,7 +1366,10 @@ def week_view():
                             background=rx.cond(day["is_today"],
                                 "light-dark(rgba(120,174,251,0.16), rgba(120,174,251,0.18))",
                                 "transparent"),
-                            padding="9px 2px", border_radius="13px"),
+                            padding="9px 2px", border_radius="13px 13px 0 0",
+                            border=rx.cond(day["is_today"],
+                                "1px solid light-dark(rgba(120,174,251,0.22), rgba(120,174,251,0.24))",
+                                "1px solid transparent")),
                     ),
                     columns="7", width="100%", flex="1", min_width="0",
                     grid_template_columns="repeat(7, minmax(0, 1fr))", gap="0px"),
@@ -1416,15 +1381,15 @@ def week_view():
 
                 *[rx.text(f"{hour:02d}:00", font_size="10px", line_height="1",
 
-                          color="light-dark(#8490a5, #9eabc7)", height="72px",
+                          color="light-dark(#8490a5, #9eabc7)", height="42px",
 
-                          width="42px", text_align="right", padding_top="0px")
+                          width="46px", text_align="right", padding_top="0px")
 
-                  for hour in range(7, 20, 2)],
+                  for hour in range(7, 22)],
 
-                width="42px", min_width="42px", align="end", spacing="0",
+                width="58px", min_width="58px", align="end", spacing="0",
 
-                padding_top="4px"),
+                padding_top="4px", padding_right="12px"),
 
               rx.grid(
 
@@ -1434,61 +1399,45 @@ def week_view():
 
                     lambda day: rx.box(
 
-                        rx.vstack(
-
+                        rx.box(
                             rx.cond(
-
-                                day["iso"] == State.week_days_data[0]["iso"],
-
+                                day["iso"] == State.call_event_date,
                                 rx.box(
-
                                     rx.vstack(
-
-                                        rx.text("Встреча с командой", font_size="11px",
-
-                                                font_weight="500"),
-
-                                        rx.text("15:00", font_size="10px"),
-
-                                        spacing="1"),
-
-                                    background="rgba(112,151,239,0.28)",
-
-                                    border="1px solid rgba(112,151,239,0.35)",
-
-                                    border_radius="10px", padding="7px",
-
-                                    margin_top="190px", width="100%"),
-
-                                rx.fragment()),
-
-                            rx.cond(
-
-                                day["iso"] == State.week_days_data[1]["iso"],
-
-                                rx.box(
-
-                                    rx.vstack(
-
                                         rx.text("Позвонить Ивану", font_size="11px",
-
-                                                font_weight="500"),
-
+                                                font_weight="600"),
                                         rx.text("10:00", font_size="10px"),
-
                                         spacing="1"),
-
+                                    position="absolute", top="126px", left="3px", right="3px",
+                                    min_height="44px",
                                     background="rgba(89,190,170,0.25)",
-
-                                    border="1px solid rgba(89,190,170,0.35)",
-
-                                    border_radius="10px", padding="7px",
-
-                                    margin_top="90px", width="100%"),
-
+                                    border="1px solid rgba(89,190,170,0.45)",
+                                    border_radius="9px", padding="6px",
+                                    z_index="2"),
                                 rx.fragment()),
-
-                            width="100%", align="stretch", spacing="2"),
+                            rx.cond(
+                                day["iso"] == State.meeting_event_date,
+                                rx.box(
+                                    rx.vstack(
+                                        rx.text("Встреча с командой", font_size="11px",
+                                                font_weight="600"),
+                                        rx.text("15:00", font_size="10px"),
+                                        spacing="1"),
+                                    position="absolute", top="336px", left="3px", right="3px",
+                                    min_height="44px",
+                                    background="rgba(112,151,239,0.28)",
+                                    border="1px solid rgba(112,151,239,0.48)",
+                                    border_radius="9px", padding="6px",
+                                    z_index="2"),
+                                rx.fragment()),
+                            width="100%", height="630px", min_height="630px",
+                            position="relative", padding="0",
+                            background="transparent",
+                            style={"backgroundImage": rx.cond(
+                                day["is_today"],
+                                "linear-gradient(180deg, light-dark(rgba(120,174,251,0.16), rgba(120,174,251,0.18)) 0%, light-dark(rgba(120,174,251,0.045), rgba(120,174,251,0.055)) 100%), repeating-linear-gradient(to bottom, transparent 0px, transparent 40px, light-dark(rgba(80,100,140,0.22), rgba(255,255,255,0.15)) 42px)",
+                                "repeating-linear-gradient(to bottom, transparent 0px, transparent 40px, light-dark(rgba(80,100,140,0.22), rgba(255,255,255,0.15)) 42px)")},
+                        ),
 
                         rx.cond(
 
@@ -1514,15 +1463,16 @@ def week_view():
 
                             rx.fragment()),
 
-                        min_height="504px", height="504px", padding="4px", position="relative",
+                        min_height="630px", height="630px", padding="4px", position="relative",
 
                         border_left="1px solid light-dark(rgba(80,100,140,0.12), rgba(255,255,255,0.08))",
 
-                        background=rx.cond(day["is_today"],
-
-                            "light-dark(rgba(120,174,251,0.045), rgba(120,174,251,0.055))",
-
-                            "transparent"),
+                        background="transparent",
+                        border_radius="12px 12px 0 0",
+                        style={"backgroundImage": rx.cond(
+                            day["is_today"],
+                            "linear-gradient(180deg, light-dark(rgba(120,174,251,0.16), rgba(120,174,251,0.18)) 0%, light-dark(rgba(120,174,251,0.045), rgba(120,174,251,0.055)) 100%), repeating-linear-gradient(to bottom, transparent 0px, transparent 40px, light-dark(rgba(80,100,140,0.22), rgba(255,255,255,0.15)) 42px)",
+                            "repeating-linear-gradient(to bottom, transparent 0px, transparent 41px, light-dark(rgba(80,100,140,0.18), rgba(255,255,255,0.12)) 42px)")},
 
                     ),
 
@@ -1533,10 +1483,6 @@ def week_view():
                 grid_template_columns="repeat(7, minmax(0, 1fr))", gap="0px"),
 
               width="100%", align="start", spacing="0"),
-
-            rx.text("Шкала времени: 07:00–21:00 · синяя линия показывает текущее время. События пока демонстрационные: исходный проект не содержит хранилища или API событий.",
-
-                    font_size="11px", color="light-dark(#8994a9, #98a6c3)"),
 
             width="100%", spacing="2"),
 
@@ -1556,19 +1502,12 @@ def calendar_view():
 
         rx.hstack(
 
-            rx.vstack(
-
-                rx.text("ПЛАНИРОВАНИЕ", font_size="10px", letter_spacing="2px",
-
-                        font_weight="700", color="light-dark(#71809c, #aab7d5)"),
-
+            rx.hstack(
                 rx.heading("Календарь", size="6", color="light-dark(#253047, #f3f6ff)"),
-
-                rx.text("Ваше расписание в одном пространстве", font_size="14px",
-
-                        color="light-dark(#68758d, #aab5cb)"),
-
-                spacing="1", align="start"),
+                rx.button("Сегодня", on_click=State.go_to_current_week,
+                          background="linear-gradient(145deg, #8eb5ff, #6e8bea)",
+                          color="#ffffff", border_radius="10px", padding="7px 11px"),
+                spacing="3", align="center"),
 
             rx.spacer(),
 
@@ -1630,27 +1569,27 @@ def calendar_view():
 
                         rx.hstack(
 
-                            rx.button(rx.icon(tag="chevron-left", size=16), on_click=State.prev_month,
+                            rx.button(rx.icon(tag="chevron-left", size=26), on_click=State.full_prev_month,
 
                                       background="light-dark(rgba(226,233,246,0.72), rgba(255,255,255,0.07))",
 
                                       color="light-dark(#53617a, #d5def0)", border="1px solid light-dark(rgba(255,255,255,0.7), rgba(255,255,255,0.1))",
 
-                                      border_radius="11px", width="34px", min_width="34px", height="34px", flex_shrink="0"),
+                                      border_radius="12px", width="38px", min_width="38px", height="38px", flex_shrink="0"),
 
-                            rx.box(rx.heading(State.month_name + " " + State.current_year.to_string(),
+                            rx.box(rx.heading(State.full_month_name + " " + State.full_year.to_string(),
 
                                        size="5", color="light-dark(#34415a, #eff3ff)", text_align="center"),
 
                                    width="250px", min_width="250px", text_align="center", flex_shrink="0"),
 
-                            rx.button(rx.icon(tag="chevron-right", size=16), on_click=State.next_month,
+                            rx.button(rx.icon(tag="chevron-right", size=26), on_click=State.full_next_month,
 
                                       background="light-dark(rgba(226,233,246,0.72), rgba(255,255,255,0.07))",
 
                                       color="light-dark(#53617a, #d5def0)", border="1px solid light-dark(rgba(255,255,255,0.7), rgba(255,255,255,0.1))",
 
-                                      border_radius="11px", width="34px", min_width="34px", height="34px", flex_shrink="0"),
+                                      border_radius="12px", width="38px", min_width="38px", height="38px", flex_shrink="0"),
 
                             width="100%", justify="center", align="center", spacing="3", wrap="nowrap"),
 
@@ -1666,7 +1605,7 @@ def calendar_view():
 
                             grid_template_columns="repeat(7, minmax(0, 1fr))", gap="6px"),
 
-                        calendar_grid(State.calendar_days, selectable=True),
+                        calendar_grid(State.full_calendar_days, selectable=True),
 
                         width="100%", height="100%", min_height="0", spacing="2",
                         style={"display": "flex", "flexDirection": "column", "minHeight": "0"}),
@@ -1695,10 +1634,6 @@ def calendar_view():
                                 rx.text("На эту дату событий нет.", font_size="13px",
                                         color="light-dark(#8994a9, #98a6c3)"),
                                 rx.fragment()),
-
-                        rx.text("Список пока демонстрационный: хранилище событий в проекте не подключено.",
-
-                                font_size="11px", color="light-dark(#8994a9, #98a6c3)"),
 
                         align="start", width="100%", spacing="3"),
 
@@ -1731,23 +1666,26 @@ def index() -> rx.Component:
 
                     rx.hstack(
 
-                        rx.box(rx.icon(tag="audio-waveform", size=21, color="#7399ef"),
+                        rx.box(
+                            rx.vstack(*[
+                                rx.hstack(*[
+                                    rx.box(width="3px", height="3px", border_radius="0px",
+                                           background="#7399ef" if pixel == "1" else "transparent")
+                                    for pixel in row
+                                ], spacing="1")
+                                for row in ("01110", "10001", "10000", "10111", "01110")
+                            ], spacing="1", align="center", justify="center"),
+                            width="38px", height="38px",
+                            background="light-dark(rgba(255,255,255,0.85), rgba(130,160,255,0.15))",
+                            border="1px solid light-dark(rgba(255,255,255,0.9), rgba(255,255,255,0.16))",
+                            border_radius="10px", display="flex", align_items="center",
+                            justify_content="center"),
 
-                               background="light-dark(rgba(255,255,255,0.85), rgba(130,160,255,0.15))",
-
-                               border="1px solid light-dark(rgba(255,255,255,0.9), rgba(255,255,255,0.16))",
-
-                               border_radius="15px", padding="10px"),
-
-                        rx.vstack(rx.text("AURA", font_size="15px", font_weight="800", letter_spacing="2px",
-
-                                          color="light-dark(#2c3a55, #f2f5ff)"),
-
-                                  rx.text("PERSONAL ASSISTANT", font_size="9px", letter_spacing="1.5px",
-
-                                          color="light-dark(#8994a9, #98a6c3)"), spacing="0", align="start"),
-
-                        spacing="3", align="center"),
+                        rx.text("GORKY", font_size="15px", font_weight="800", letter_spacing="2px",
+                                color="light-dark(#2c3a55, #f2f5ff)"),
+                        align="center",
+                        position="absolute", left="50%",
+                        transform="translateX(-50%)"),
 
                     rx.spacer(),
 
@@ -1759,9 +1697,10 @@ def index() -> rx.Component:
 
                               border="1px solid light-dark(rgba(255,255,255,0.72), rgba(255,255,255,0.09))",
 
-                              border_radius="19px", padding="4px", spacing="1"),
+                              border_radius="14px", padding="4px", spacing="1"),
 
-                    width="100%", align="center", wrap="wrap"),
+                    width="100%", align="center", wrap="nowrap",
+                    position="relative", min_height="48px"),
 
                 width="100%", padding="8px 12px"),
 
@@ -1784,22 +1723,18 @@ def index() -> rx.Component:
         style={**style, "colorScheme": "light dark", "backgroundAttachment": "fixed"},
         on_mount=rx.call_script(r"""
             (() => {
-                if (window.__auraClockTimer) clearInterval(window.__auraClockTimer);
-                const updateAuraClock = () => {
+                if (window.__gorkyClockTimer) clearInterval(window.__gorkyClockTimer);
+                const updateGorkyClock = () => {
                     const now = new Date();
-                    const label = document.getElementById("aura-current-time-label");
                     const line = document.getElementById("aura-current-time-line");
-                    if (label) label.textContent = "Сейчас " +
-                        String(now.getHours()).padStart(2, "0") + ":" +
-                        String(now.getMinutes()).padStart(2, "0");
                     if (line) {
                         const minutes = Math.max(0, Math.min(14 * 60,
                             now.getHours() * 60 + now.getMinutes() - 7 * 60));
-                        line.style.top = (minutes * 0.6) + "px";
+                        line.style.top = (minutes * 0.7 + 4) + "px";
                     }
                 };
-                updateAuraClock();
-                window.__auraClockTimer = setInterval(updateAuraClock, 1000);
+                updateGorkyClock();
+                window.__gorkyClockTimer = setInterval(updateGorkyClock, 1000);
             })();
         """),
 
