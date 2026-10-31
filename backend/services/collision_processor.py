@@ -2,6 +2,7 @@ import re
 from datetime import date, datetime, time, timedelta
 from typing import Any
 
+
 class CollisionProcessor:
     def __init__(self, event_repository, logger, default_duration_hours: int = 1):
         self.repo = event_repository

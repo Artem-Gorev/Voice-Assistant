@@ -96,6 +96,6 @@ class TOneRecognizer(SpeechRecognizer):
     def _validate_duration(self, duration: float) -> None:
         if duration < self._config.min_audio_seconds:
             raise ValueError("Аудиозапись слишком короткая")
-        
+
         if duration > self._config.max_audio_seconds:
             raise ValueError(f"Аудиозапись превышает лимит {self._config.max_audio_seconds:g} сек.")

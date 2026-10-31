@@ -742,4 +742,3 @@ def _add_recurrence(payload: dict[str, Any], user_text: str) -> dict[str, Any]:
             return payload
         payload["data"] = data
     return payload
-

@@ -1,6 +1,6 @@
 import logging
 import unittest
-from datetime import date, datetime, time
+from datetime import date, datetime
 
 from backend.services.collision_processor import CollisionProcessor
 from backend.services.command_dispatcher import CommandDispatcher, _remove_duplicate_events

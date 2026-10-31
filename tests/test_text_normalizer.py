@@ -1,4 +1,3 @@
-import re
 import unittest
 
 from backend.text_normalizer import normalize_text_for_speech

@@ -1,6 +1,16 @@
 name: codestyle
 
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - master
+  pull_request:
+    branches:
+      - main
+      - develop
+      - master
 
 jobs:
   flake8:

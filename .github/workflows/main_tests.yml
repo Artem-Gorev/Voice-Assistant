@@ -6,8 +6,11 @@ on:
       - develop
       - main
       - master
-      - 'feature/**'
   pull_request:
+    branches:
+      - develop
+      - main
+      - master
 
 jobs:
   all_functionality:
