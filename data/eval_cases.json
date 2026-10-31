@@ -1,0 +1,1060 @@
+[
+  {
+    "id": "create_01",
+    "category": "create",
+    "phrase": "Запланируй позвонить Артёму завтра в 10:00",
+    "expected_action": "create_event",
+    "expected_slots": {
+      "title_keywords": [
+        "позвонить",
+        "артём"
+      ],
+      "date": "relative:tomorrow",
+      "time": "10:00"
+    }
+  },
+  {
+    "id": "create_02",
+    "category": "create",
+    "phrase": "Поставь встречу с научником послезавтра в 14:00",
+    "expected_action": "create_event",
+    "expected_slots": {
+      "title_keywords": [
+        "встреча",
+        "научник"
+      ],
+      "date": "relative:day_after_tomorrow",
+      "time": "14:00"
+    }
+  },
+  {
+    "id": "create_03",
+    "category": "create",
+    "phrase": "Добавь отправить договор Ивану завтра в 11:30",
+    "expected_action": "create_event",
+    "expected_slots": {
+      "title_keywords": [
+        "договор",
+        "иван"
+      ],
+      "date": "relative:tomorrow",
+      "time": "11:30"
+    }
+  },
+  {
+    "id": "create_04",
+    "category": "create",
+    "phrase": "Запиши обсудить бюджет сегодня в 16:00",
+    "expected_action": "create_event",
+    "expected_slots": {
+      "title_keywords": [
+        "бюджет"
+      ],
+      "date": "relative:today",
+      "time": "16:00"
+    }
+  },
+  {
+    "id": "create_05",
+    "category": "create",
+    "phrase": "Создай созвон с командой 2026-11-05 в 12:15",
+    "expected_action": "create_event",
+    "expected_slots": {
+      "title_keywords": [
+        "созвон",
+        "команда"
+      ],
+      "date": "2026-11-05",
+      "time": "12:15"
+    }
+  },
+  {
+    "id": "create_06",
+    "category": "create",
+    "phrase": "Напомни проверить отчёт завтра в 09:00",
+    "expected_action": "create_event",
+    "expected_slots": {
+      "title_keywords": [
+        "отчёт"
+      ],
+      "date": "relative:tomorrow",
+      "time": "09:00"
+    }
+  },
+  {
+    "id": "create_07",
+    "category": "create",
+    "phrase": "Запланируй демо проекта послезавтра в 15:45",
+    "expected_action": "create_event",
+    "expected_slots": {
+      "title_keywords": [
+        "демо",
+        "проект"
+      ],
+      "date": "relative:day_after_tomorrow",
+      "time": "15:45"
+    }
+  },
+  {
+    "id": "create_08",
+    "category": "create",
+    "phrase": "Поставь подготовить презентацию сегодня в 18:20",
+    "expected_action": "create_event",
+    "expected_slots": {
+      "title_keywords": [
+        "презентация"
+      ],
+      "date": "relative:today",
+      "time": "18:20"
+    }
+  },
+  {
+    "id": "create_09",
+    "category": "create",
+    "phrase": "Добавь встречу с Марией завтра в 13:00",
+    "expected_action": "create_event",
+    "expected_slots": {
+      "title_keywords": [
+        "встреча",
+        "мария"
+      ],
+      "date": "relative:tomorrow",
+      "time": "13:00"
+    }
+  },
+  {
+    "id": "create_10",
+    "category": "create",
+    "phrase": "Запланируй согласовать смету 2026-11-10 в 10:30",
+    "expected_action": "create_event",
+    "expected_slots": {
+      "title_keywords": [
+        "смета"
+      ],
+      "date": "2026-11-10",
+      "time": "10:30"
+    }
+  },
+  {
+    "id": "create_11",
+    "category": "create",
+    "phrase": "Запиши проверить задачу послезавтра в 17:00",
+    "expected_action": "create_event",
+    "expected_slots": {
+      "title_keywords": [
+        "задача"
+      ],
+      "date": "relative:day_after_tomorrow",
+      "time": "17:00"
+    }
+  },
+  {
+    "id": "create_12",
+    "category": "create",
+    "phrase": "Поставь отправить документы завтра в 08:45",
+    "expected_action": "create_event",
+    "expected_slots": {
+      "title_keywords": [
+        "документы"
+      ],
+      "date": "relative:tomorrow",
+      "time": "08:45"
+    }
+  },
+  {
+    "id": "create_13",
+    "category": "create",
+    "phrase": "Создай планёрку с отделом сегодня в 11:00",
+    "expected_action": "create_event",
+    "expected_slots": {
+      "title_keywords": [
+        "планёрка",
+        "отдел"
+      ],
+      "date": "relative:today",
+      "time": "11:00"
+    }
+  },
+  {
+    "id": "create_14",
+    "category": "create",
+    "phrase": "Напомни купить расходники 2026-11-12 в 19:10",
+    "expected_action": "create_event",
+    "expected_slots": {
+      "title_keywords": [
+        "расходники"
+      ],
+      "date": "2026-11-12",
+      "time": "19:10"
+    }
+  },
+  {
+    "id": "create_15",
+    "category": "create",
+    "phrase": "Запланируй обсудить договор с Ольгой завтра в 14:30",
+    "expected_action": "create_event",
+    "expected_slots": {
+      "title_keywords": [
+        "договор",
+        "ольга"
+      ],
+      "date": "relative:tomorrow",
+      "time": "14:30"
+    }
+  },
+  {
+    "id": "create_16",
+    "category": "create",
+    "phrase": "Добавь подготовить техническое задание послезавтра в 09:15",
+    "expected_action": "create_event",
+    "expected_slots": {
+      "title_keywords": [
+        "техническое",
+        "задание"
+      ],
+      "date": "relative:day_after_tomorrow",
+      "time": "09:15"
+    }
+  },
+  {
+    "id": "create_17",
+    "category": "create",
+    "phrase": "Запиши позвонить клиенту 2026-11-15 в 12:00",
+    "expected_action": "create_event",
+    "expected_slots": {
+      "title_keywords": [
+        "позвонить",
+        "клиент"
+      ],
+      "date": "2026-11-15",
+      "time": "12:00"
+    }
+  },
+  {
+    "id": "create_18",
+    "category": "create",
+    "phrase": "Поставь собеседование завтра в 16:40",
+    "expected_action": "create_event",
+    "expected_slots": {
+      "title_keywords": [
+        "собеседование"
+      ],
+      "date": "relative:tomorrow",
+      "time": "16:40"
+    }
+  },
+  {
+    "id": "create_19",
+    "category": "create",
+    "phrase": "Запланируй проверить аналитику сегодня в 20:00",
+    "expected_action": "create_event",
+    "expected_slots": {
+      "title_keywords": [
+        "аналитика"
+      ],
+      "date": "relative:today",
+      "time": "20:00"
+    }
+  },
+  {
+    "id": "create_20",
+    "category": "create",
+    "phrase": "Добавь встречу по хакатону 2026-11-20 в 10:00",
+    "expected_action": "create_event",
+    "expected_slots": {
+      "title_keywords": [
+        "встреча",
+        "хакатон"
+      ],
+      "date": "2026-11-20",
+      "time": "10:00"
+    }
+  },
+  {
+    "id": "list_01",
+    "category": "list",
+    "phrase": "Какие у меня планы сегодня?",
+    "expected_action": "list_events",
+    "expected_slots": {
+      "date": "relative:today"
+    }
+  },
+  {
+    "id": "list_02",
+    "category": "list",
+    "phrase": "Покажи дела на завтра",
+    "expected_action": "list_events",
+    "expected_slots": {
+      "date": "relative:tomorrow"
+    }
+  },
+  {
+    "id": "list_03",
+    "category": "list",
+    "phrase": "Что запланировано послезавтра?",
+    "expected_action": "list_events",
+    "expected_slots": {
+      "date": "relative:day_after_tomorrow"
+    }
+  },
+  {
+    "id": "list_04",
+    "category": "list",
+    "phrase": "Покажи расписание на 2026-11-05",
+    "expected_action": "list_events",
+    "expected_slots": {
+      "date": "2026-11-05"
+    }
+  },
+  {
+    "id": "list_05",
+    "category": "list",
+    "phrase": "Какие задачи на 2026-11-10?",
+    "expected_action": "list_events",
+    "expected_slots": {
+      "date": "2026-11-10"
+    }
+  },
+  {
+    "id": "list_06",
+    "category": "list",
+    "phrase": "Список дел на сегодня",
+    "expected_action": "list_events",
+    "expected_slots": {
+      "date": "relative:today"
+    }
+  },
+  {
+    "id": "list_07",
+    "category": "list",
+    "phrase": "Что у меня завтра утром?",
+    "expected_action": "list_events",
+    "expected_slots": {
+      "date": "relative:tomorrow"
+    }
+  },
+  {
+    "id": "list_08",
+    "category": "list",
+    "phrase": "Покажи планы на пятницу",
+    "expected_action": "list_events",
+    "expected_slots": {
+      "date": "weekday:пятница"
+    }
+  },
+  {
+    "id": "list_09",
+    "category": "list",
+    "phrase": "Какие встречи сегодня?",
+    "expected_action": "list_events",
+    "expected_slots": {
+      "date": "relative:today"
+    }
+  },
+  {
+    "id": "list_10",
+    "category": "list",
+    "phrase": "Что запланировано на 2026-11-12?",
+    "expected_action": "list_events",
+    "expected_slots": {
+      "date": "2026-11-12"
+    }
+  },
+  {
+    "id": "list_11",
+    "category": "list",
+    "phrase": "Покажи задачи на следующую среду",
+    "expected_action": "list_events",
+    "expected_slots": {
+      "date": "weekday:следующая_среда"
+    }
+  },
+  {
+    "id": "list_12",
+    "category": "list",
+    "phrase": "Какие у меня дела послезавтра?",
+    "expected_action": "list_events",
+    "expected_slots": {
+      "date": "relative:day_after_tomorrow"
+    }
+  },
+  {
+    "id": "list_13",
+    "category": "list",
+    "phrase": "Покажи список событий на сегодня",
+    "expected_action": "list_events",
+    "expected_slots": {
+      "date": "relative:today"
+    }
+  },
+  {
+    "id": "list_14",
+    "category": "list",
+    "phrase": "Что у меня на этой неделе?",
+    "expected_action": "list_events",
+    "expected_slots": {
+      "date": "range:this_week"
+    }
+  },
+  {
+    "id": "list_15",
+    "category": "list",
+    "phrase": "Покажи расписание на следующей неделе",
+    "expected_action": "list_events",
+    "expected_slots": {
+      "date": "range:next_week"
+    }
+  },
+  {
+    "id": "list_16",
+    "category": "list",
+    "phrase": "Какие дела на четверг?",
+    "expected_action": "list_events",
+    "expected_slots": {
+      "date": "weekday:четверг"
+    }
+  },
+  {
+    "id": "list_17",
+    "category": "list",
+    "phrase": "Список задач на завтра",
+    "expected_action": "list_events",
+    "expected_slots": {
+      "date": "relative:tomorrow"
+    }
+  },
+  {
+    "id": "list_18",
+    "category": "list",
+    "phrase": "Покажи встречи на 2026-11-15",
+    "expected_action": "list_events",
+    "expected_slots": {
+      "date": "2026-11-15"
+    }
+  },
+  {
+    "id": "list_19",
+    "category": "list",
+    "phrase": "Что у меня запланировано сегодня вечером?",
+    "expected_action": "list_events",
+    "expected_slots": {
+      "date": "relative:today"
+    }
+  },
+  {
+    "id": "list_20",
+    "category": "list",
+    "phrase": "Какие планы на вторник?",
+    "expected_action": "list_events",
+    "expected_slots": {
+      "date": "weekday:вторник"
+    }
+  },
+  {
+    "id": "search_01",
+    "category": "search",
+    "phrase": "Я когда-то ставил задачу про договор, найди её",
+    "expected_action": "search_events",
+    "expected_slots": {},
+    "target_title": "Отправить договор Иваном"
+  },
+  {
+    "id": "search_02",
+    "category": "search",
+    "phrase": "Найди запись про контракт с Иваном",
+    "expected_action": "search_events",
+    "expected_slots": {},
+    "target_title": "Отправить договор Иваном"
+  },
+  {
+    "id": "search_03",
+    "category": "search",
+    "phrase": "Поищи задачу, где надо проверить техзадание по договору",
+    "expected_action": "search_events",
+    "expected_slots": {},
+    "target_title": "Проверить техническое задание по договору"
+  },
+  {
+    "id": "search_04",
+    "category": "search",
+    "phrase": "Найди что-нибудь про подготовку отчёта",
+    "expected_action": "search_events",
+    "expected_slots": {},
+    "target_title": "Подготовить отчёт"
+  },
+  {
+    "id": "search_05",
+    "category": "search",
+    "phrase": "Поищи отправку отчета Алексею",
+    "expected_action": "search_events",
+    "expected_slots": {},
+    "target_title": "Отправить отчёт Алексеем"
+  },
+  {
+    "id": "search_06",
+    "category": "search",
+    "phrase": "Найди планёрку, связанную с договором",
+    "expected_action": "search_events",
+    "expected_slots": {},
+    "target_title": "Провести планёрку по договору"
+  },
+  {
+    "id": "search_07",
+    "category": "search",
+    "phrase": "Когда я согласовывал договор с Марией?",
+    "expected_action": "search_events",
+    "expected_slots": {},
+    "target_title": "Согласовать договор с Марией"
+  },
+  {
+    "id": "search_08",
+    "category": "search",
+    "phrase": "Найди демо проекта для хакатона",
+    "expected_action": "search_events",
+    "expected_slots": {},
+    "target_title": "Демо проекта по хакатону"
+  },
+  {
+    "id": "search_09",
+    "category": "search",
+    "phrase": "Поищи задачу по статусу аналитики",
+    "expected_action": "search_events",
+    "expected_slots": {},
+    "target_title": "Проверить статус задачи по аналитике"
+  },
+  {
+    "id": "search_10",
+    "category": "search",
+    "phrase": "Найди обсуждение бюджета и договора",
+    "expected_action": "search_events",
+    "expected_slots": {},
+    "target_title": "Обсудить бюджет по договору"
+  },
+  {
+    "id": "search_11",
+    "category": "search",
+    "phrase": "Когда согласовывали отчёт с Максимом?",
+    "expected_action": "search_events",
+    "expected_slots": {},
+    "target_title": "Согласовать отчёт с Максимом"
+  },
+  {
+    "id": "search_12",
+    "category": "search",
+    "phrase": "Я просил отправить договор Ивану, найди задачу",
+    "expected_action": "search_events",
+    "expected_slots": {},
+    "target_title": "Отправить договор Иваном"
+  },
+  {
+    "id": "search_13",
+    "category": "search",
+    "phrase": "Покажи задачу с техническим заданием и контрактом",
+    "expected_action": "search_events",
+    "expected_slots": {},
+    "target_title": "Проверить техническое задание по договору"
+  },
+  {
+    "id": "search_14",
+    "category": "search",
+    "phrase": "Найди документ, который надо подготовить к отчёту",
+    "expected_action": "search_events",
+    "expected_slots": {},
+    "target_title": "Подготовить отчёт"
+  },
+  {
+    "id": "search_15",
+    "category": "search",
+    "phrase": "Поищи, кому отправлял отчет Алексей",
+    "expected_action": "search_events",
+    "expected_slots": {},
+    "target_title": "Отправить отчёт Алексеем"
+  },
+  {
+    "id": "search_16",
+    "category": "search",
+    "phrase": "Когда была планёрка насчёт контракта?",
+    "expected_action": "search_events",
+    "expected_slots": {},
+    "target_title": "Провести планёрку по договору"
+  },
+  {
+    "id": "search_17",
+    "category": "search",
+    "phrase": "Найди согласование контракта с Марией",
+    "expected_action": "search_events",
+    "expected_slots": {},
+    "target_title": "Согласовать договор с Марией"
+  },
+  {
+    "id": "search_18",
+    "category": "search",
+    "phrase": "Покажи мероприятие с демо на хакатоне",
+    "expected_action": "search_events",
+    "expected_slots": {},
+    "target_title": "Демо проекта по хакатону"
+  },
+  {
+    "id": "search_19",
+    "category": "search",
+    "phrase": "Найди задачу про аналитику и статус",
+    "expected_action": "search_events",
+    "expected_slots": {},
+    "target_title": "Проверить статус задачи по аналитике"
+  },
+  {
+    "id": "search_20",
+    "category": "search",
+    "phrase": "Поищи разговор про бюджет договора",
+    "expected_action": "search_events",
+    "expected_slots": {},
+    "target_title": "Обсудить бюджет по договору"
+  },
+  {
+    "id": "update_01",
+    "category": "update",
+    "phrase": "Перенеси встречу с Иваном на завтра в 15:30",
+    "expected_action": "update_event",
+    "expected_slots": {
+      "date": "relative:tomorrow",
+      "time": "15:30"
+    }
+  },
+  {
+    "id": "update_02",
+    "category": "update",
+    "phrase": "Передвинь задачу про договор на послезавтра в 10:00",
+    "expected_action": "update_event",
+    "expected_slots": {
+      "date": "relative:day_after_tomorrow",
+      "time": "10:00"
+    }
+  },
+  {
+    "id": "update_03",
+    "category": "update",
+    "phrase": "Измени время созвона с командой на 16:15",
+    "expected_action": "update_event",
+    "expected_slots": {
+      "time": "16:15"
+    }
+  },
+  {
+    "id": "update_04",
+    "category": "update",
+    "phrase": "Переименуй встречу с Марией в статус-митинг",
+    "expected_action": "update_event",
+    "expected_slots": {
+      "title": "статус-митинг"
+    }
+  },
+  {
+    "id": "update_05",
+    "category": "update",
+    "phrase": "Перенеси звонок клиенту на 2026-11-12 в 12:00",
+    "expected_action": "update_event",
+    "expected_slots": {
+      "date": "2026-11-12",
+      "time": "12:00"
+    }
+  },
+  {
+    "id": "update_06",
+    "category": "update",
+    "phrase": "Сдвинь задачу по аналитике на завтра в 09:45",
+    "expected_action": "update_event",
+    "expected_slots": {
+      "date": "relative:tomorrow",
+      "time": "09:45"
+    }
+  },
+  {
+    "id": "update_07",
+    "category": "update",
+    "phrase": "Поменяй встречу по бюджету на послезавтра в 14:00",
+    "expected_action": "update_event",
+    "expected_slots": {
+      "date": "relative:day_after_tomorrow",
+      "time": "14:00"
+    }
+  },
+  {
+    "id": "update_08",
+    "category": "update",
+    "phrase": "Перенеси подготовку отчёта на 2026-11-15",
+    "expected_action": "update_event",
+    "expected_slots": {
+      "date": "2026-11-15"
+    }
+  },
+  {
+    "id": "update_09",
+    "category": "update",
+    "phrase": "Измени созвон с командой на 11:30",
+    "expected_action": "update_event",
+    "expected_slots": {
+      "time": "11:30"
+    }
+  },
+  {
+    "id": "update_10",
+    "category": "update",
+    "phrase": "Переименуй задачу в проверить договор",
+    "expected_action": "update_event",
+    "expected_slots": {
+      "title": "проверить договор"
+    }
+  },
+  {
+    "id": "update_11",
+    "category": "update",
+    "phrase": "Передвинь демо проекта на завтра в 17:00",
+    "expected_action": "update_event",
+    "expected_slots": {
+      "date": "relative:tomorrow",
+      "time": "17:00"
+    }
+  },
+  {
+    "id": "update_12",
+    "category": "update",
+    "phrase": "Перенеси обсуждение сметы на 2026-11-20 в 13:30",
+    "expected_action": "update_event",
+    "expected_slots": {
+      "date": "2026-11-20",
+      "time": "13:30"
+    }
+  },
+  {
+    "id": "update_13",
+    "category": "update",
+    "phrase": "Поменяй время звонка с Артёмом на 18:00",
+    "expected_action": "update_event",
+    "expected_slots": {
+      "time": "18:00"
+    }
+  },
+  {
+    "id": "update_14",
+    "category": "update",
+    "phrase": "Перенеси встречу по хакатону на послезавтра в 10:15",
+    "expected_action": "update_event",
+    "expected_slots": {
+      "date": "relative:day_after_tomorrow",
+      "time": "10:15"
+    }
+  },
+  {
+    "id": "update_15",
+    "category": "update",
+    "phrase": "Переименуй задачу в отправить финальный отчёт",
+    "expected_action": "update_event",
+    "expected_slots": {
+      "title": "отправить финальный отчёт"
+    }
+  },
+  {
+    "id": "delete_01",
+    "category": "delete",
+    "phrase": "Удали встречу с Иваном",
+    "expected_action": "delete_event"
+  },
+  {
+    "id": "delete_02",
+    "category": "delete",
+    "phrase": "Отмени задачу про договор",
+    "expected_action": "delete_event"
+  },
+  {
+    "id": "delete_03",
+    "category": "delete",
+    "phrase": "Убери созвон с командой",
+    "expected_action": "delete_event"
+  },
+  {
+    "id": "delete_04",
+    "category": "delete",
+    "phrase": "Удалить встречу по бюджету",
+    "expected_action": "delete_event"
+  },
+  {
+    "id": "delete_05",
+    "category": "delete",
+    "phrase": "Отмени звонок клиенту завтра в 10:00",
+    "expected_action": "delete_event"
+  },
+  {
+    "id": "delete_06",
+    "category": "delete",
+    "phrase": "Удали задачу на 2026-11-12",
+    "expected_action": "delete_event"
+  },
+  {
+    "id": "delete_07",
+    "category": "delete",
+    "phrase": "Убери демо проекта",
+    "expected_action": "delete_event"
+  },
+  {
+    "id": "delete_08",
+    "category": "delete",
+    "phrase": "Отмени планёрку с отделом",
+    "expected_action": "delete_event"
+  },
+  {
+    "id": "delete_09",
+    "category": "delete",
+    "phrase": "Удали напоминание про отчёт",
+    "expected_action": "delete_event"
+  },
+  {
+    "id": "delete_10",
+    "category": "delete",
+    "phrase": "Отменить встречу с Марией",
+    "expected_action": "delete_event"
+  },
+  {
+    "id": "delete_11",
+    "category": "delete",
+    "phrase": "Отмени встречу на 2026-11-15",
+    "expected_action": "delete_event"
+  },
+  {
+    "id": "delete_12",
+    "category": "delete",
+    "phrase": "Удали задачу проверить аналитику",
+    "expected_action": "delete_event"
+  },
+  {
+    "id": "delete_13",
+    "category": "delete",
+    "phrase": "Убери созвон по договору",
+    "expected_action": "delete_event"
+  },
+  {
+    "id": "complete_01",
+    "category": "complete",
+    "phrase": "Отметь задачу про договор выполненной",
+    "expected_action": "complete_event"
+  },
+  {
+    "id": "complete_02",
+    "category": "complete",
+    "phrase": "Я сделал подготовку отчёта",
+    "expected_action": "complete_event"
+  },
+  {
+    "id": "complete_03",
+    "category": "complete",
+    "phrase": "Пометь созвон с командой сделанным",
+    "expected_action": "complete_event"
+  },
+  {
+    "id": "complete_04",
+    "category": "complete",
+    "phrase": "Выполнил задачу по аналитике",
+    "expected_action": "complete_event"
+  },
+  {
+    "id": "complete_05",
+    "category": "complete",
+    "phrase": "Отметь встречу с Марией выполненной",
+    "expected_action": "complete_event"
+  },
+  {
+    "id": "complete_06",
+    "category": "complete",
+    "phrase": "Я сделала звонок клиенту",
+    "expected_action": "complete_event"
+  },
+  {
+    "id": "complete_07",
+    "category": "complete",
+    "phrase": "Пометь подготовку презентации сделанной",
+    "expected_action": "complete_event"
+  },
+  {
+    "id": "complete_08",
+    "category": "complete",
+    "phrase": "Задача по бюджету выполнена, отметь её",
+    "expected_action": "complete_event"
+  },
+  {
+    "id": "complete_09",
+    "category": "complete",
+    "phrase": "Сделал демо проекта",
+    "expected_action": "complete_event"
+  },
+  {
+    "id": "complete_10",
+    "category": "complete",
+    "phrase": "Отметь проверку договора выполненной",
+    "expected_action": "complete_event"
+  },
+  {
+    "id": "complete_11",
+    "category": "complete",
+    "phrase": "Я выполнила задачу с отчётом",
+    "expected_action": "complete_event"
+  },
+  {
+    "id": "complete_12",
+    "category": "complete",
+    "phrase": "Пометь встречу сделанной",
+    "expected_action": "complete_event"
+  },
+  {
+    "id": "context_01",
+    "category": "context",
+    "phrase": "с командой",
+    "expected_action": "create_event",
+    "expected_slots": {
+      "title_keywords": [
+        "встреча",
+        "команда"
+      ],
+      "date": "relative:tomorrow",
+      "time": "14:00"
+    },
+    "history": [
+      "Запланируй встречу на завтра в 14:00"
+    ]
+  },
+  {
+    "id": "context_02",
+    "category": "context",
+    "phrase": "проверить договор",
+    "expected_action": "create_event",
+    "expected_slots": {
+      "title_keywords": [
+        "проверить",
+        "договор"
+      ],
+      "date": "relative:day_after_tomorrow",
+      "time": "11:30"
+    },
+    "history": [
+      "Поставь задачу на послезавтра в 11:30"
+    ]
+  },
+  {
+    "id": "context_03",
+    "category": "context",
+    "phrase": "с отделом продаж",
+    "expected_action": "create_event",
+    "expected_slots": {
+      "title_keywords": [
+        "встреча",
+        "отдел",
+        "продаж"
+      ],
+      "date": "2026-11-05",
+      "time": "13:00"
+    },
+    "history": [
+      "Запланируй встречу на 2026-11-05 в 13:00"
+    ]
+  },
+  {
+    "id": "context_04",
+    "category": "context",
+    "phrase": "с Иваном",
+    "expected_action": "create_event",
+    "expected_slots": {
+      "title_keywords": [
+        "созвон",
+        "иван"
+      ],
+      "date": "relative:tomorrow",
+      "time": "16:15"
+    },
+    "history": [
+      "Добавь созвон завтра в 16:15"
+    ]
+  },
+  {
+    "id": "context_05",
+    "category": "context",
+    "phrase": "подготовить презентацию",
+    "expected_action": "create_event",
+    "expected_slots": {
+      "title_keywords": [
+        "подготовить",
+        "презентация"
+      ],
+      "date": "relative:today",
+      "time": "17:00"
+    },
+    "history": [
+      "Запланируй задачу сегодня в 17:00"
+    ]
+  },
+  {
+    "id": "recurrence_01",
+    "category": "recurrence",
+    "phrase": "Запланируй каждый день проверять почту завтра в 10:00",
+    "expected_action": "create_event",
+    "expected_slots": {
+      "title_keywords": [
+        "проверять",
+        "почту"
+      ],
+      "date": "relative:tomorrow",
+      "time": "10:00"
+    }
+  },
+  {
+    "id": "recurrence_02",
+    "category": "recurrence",
+    "phrase": "Добавь еженедельную встречу с командой завтра в 12:00",
+    "expected_action": "create_event",
+    "expected_slots": {
+      "title_keywords": [
+        "встреча",
+        "команда"
+      ],
+      "date": "relative:tomorrow",
+      "time": "12:00"
+    }
+  },
+  {
+    "id": "recurrence_03",
+    "category": "recurrence",
+    "phrase": "Запиши каждый день зарядку послезавтра в 08:00",
+    "expected_action": "create_event",
+    "expected_slots": {
+      "title_keywords": [
+        "зарядка"
+      ],
+      "date": "relative:day_after_tomorrow",
+      "time": "08:00"
+    }
+  },
+  {
+    "id": "recurrence_04",
+    "category": "recurrence",
+    "phrase": "Поставь встречу каждую среду 4 раза на 2026-11-04 в 15:00",
+    "expected_action": "create_event",
+    "expected_slots": {
+      "title_keywords": [
+        "встреча"
+      ],
+      "date": "2026-11-04",
+      "time": "15:00"
+    }
+  },
+  {
+    "id": "recurrence_05",
+    "category": "recurrence",
+    "phrase": "Напомни ежемесячно оплачивать счета завтра в 09:30",
+    "expected_action": "create_event",
+    "expected_slots": {
+      "title_keywords": [
+        "оплачивать",
+        "счета"
+      ],
+      "date": "relative:tomorrow",
+      "time": "09:30"
+    }
+  }
+]
