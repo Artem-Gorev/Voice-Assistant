@@ -85,6 +85,9 @@ class ListEventsData(BaseModel):
                 raise ValueError("Use either date or the date_from/date_to range")
             return self
 
+        if self.date_from is None and self.date_to is None:
+            # An unqualified list request means the user's whole task list.
+            return self
         if self.date_from is None or self.date_to is None:
             raise ValueError("Provide date or both date_from and date_to")
         if date.fromisoformat(self.date_from) > date.fromisoformat(self.date_to):

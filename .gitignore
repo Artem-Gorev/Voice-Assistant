@@ -228,3 +228,4 @@ __marimo__/
 
 # System
 .DS_Store
+.env.example

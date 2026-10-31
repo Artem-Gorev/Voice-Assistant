@@ -25,9 +25,13 @@ class VoiceAssistant:
         dsn = os.getenv("DATABASE_URL") or self._build_database_url()
         self._repository = EventRepository(dsn=dsn, logger=logger)
 
-        vectorizer = TextVectorizer.create(model_name="rubert_tiny2", config=RuBertTiny2Config(), logger=logger)
+        self._vectorizer = TextVectorizer.create(
+            model_name="rubert_tiny2", config=RuBertTiny2Config(), logger=logger
+        )
         min_search_score = float(os.getenv("TTV_MIN_SIMILARITY", "0.80"))
-        search_service = SemanticSearchService(self._repository, vectorizer, logger, min_score=min_search_score)
+        search_service = SemanticSearchService(
+            self._repository, self._vectorizer, logger, min_score=min_search_score
+        )
         collision_processor = CollisionProcessor(event_repository=self._repository, logger=logger)
 
         self._dispatcher = CommandDispatcher(collision_proc=collision_processor, event_repository=self._repository,
@@ -91,21 +95,41 @@ class VoiceAssistant:
         if not self._speak:
             raise RuntimeError("Голосовой ответ не включён. Создайте VoiceAssistant с speak=True.")
 
-        audio = self._synthesizer.synthesize(text)
-        self._audio_handler.play_audio(audio.to_wav_bytes())
+        self._audio_handler.play_audio(self.synthesize_response(text))
 
-    def run(self, text: str, text_output: bool = True, voice_output: bool = False) -> str:
+    def synthesize_response(self, text: str) -> bytes:
+        if not self._speak or self._synthesizer is None:
+            raise RuntimeError("Голосовой ответ не включён. Создайте VoiceAssistant с speak=True.")
+        return self._synthesizer.synthesize(text).to_wav_bytes()
+
+    def preload_models(self) -> None:
+        """Load model weights during application startup, before a user request."""
+        _ = self._vectorizer.dimension
+        if self._recognizer is not None:
+            self._recognizer._load_pipeline()
+        if self._synthesizer is not None:
+            self._synthesizer._load_model()
+
+    def run(
+        self,
+        text: str,
+        text_output: bool = True,
+        voice_output: bool = False,
+        session_id: str = "cli",
+    ) -> str:
         normalized_text = self._clean_input(text)
         if not normalized_text:
             raise ValueError("Текст запроса не должен быть пустым")
 
         self._logger.info(f"Пользователь: {normalized_text}")
-        response = self._dispatcher.process_followup(normalized_text, session_id="cli")
+        response = self._dispatcher.process_followup(normalized_text, session_id=session_id)
         if response is None:
             current_datetime = datetime.now().astimezone()
-            result = self._llm.process(normalized_text, session_id="cli", current_dt=current_datetime)
+            result = self._llm.process(normalized_text, session_id=session_id, current_dt=current_datetime)
             self._logger.debug(f"[LLM]:\n{result.model_dump_json(indent=2)}")
-            response = self._dispatcher.process_llm_response(result.model_dump(mode="json"), session_id="cli")
+            response = self._dispatcher.process_llm_response(
+                result.model_dump(mode="json"), session_id=session_id
+            )
         if text_output:
             self._logger.info(f"Ассистент: {response}")
         if voice_output:

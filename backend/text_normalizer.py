@@ -17,6 +17,7 @@ _MONTHS_GENITIVE = (
     "января", "февраля", "марта", "апреля", "мая", "июня", "июля",
     "августа", "сентября", "октября", "ноября", "декабря",
 )
+_MONTHS_BY_NAME = {name: index for index, name in enumerate(_MONTHS_GENITIVE, 1)}
 _LIST_ORDINALS = (
     "первое", "второе", "третье", "четвёртое", "пятое", "шестое", "седьмое", "восьмое", "девятое", "десятое",
 )
@@ -172,6 +173,18 @@ def _time_to_words(match: re.Match[str]) -> str:
 
 
 def normalize_text_for_speech(text: str) -> str:
+    def replace_named_date(match: re.Match[str]) -> str:
+        day = int(match.group(1))
+        month = _MONTHS_BY_NAME[match.group(2).lower()]
+        year = int(match.group(3)) if match.group(3) else None
+        validation_year = year or 2024
+        if not 1 <= day <= monthrange(validation_year, month)[1]:
+            return match.group(0)
+        phrase = f"{_ORDINAL_DAYS[day - 1]} {_MONTHS_GENITIVE[month - 1]}"
+        if year:
+            phrase = f"{phrase} {_year_to_words(year)}".strip()
+        return phrase
+
     def replace_date(match: re.Match[str]) -> str:
         day, month = int(match.group(1)), int(match.group(2))
         year = int(match.group(3)) if match.group(3) else 2024
@@ -192,10 +205,16 @@ def normalize_text_for_speech(text: str) -> str:
             f"{_year_to_words(value.year)}"
         ).strip()
 
-    text = re.sub(r"(?<![\d.])(\d{1,2})\.\s+(?=[а-яёa-z«])", _list_number_to_words, text, flags=re.IGNORECASE)
     text = re.sub(r"\s*;\s*", ". ", text)
     text = re.sub(r"\b\d{4}-\d{2}-\d{2}\b", replace_iso_date, text)
     text = re.sub(r"\b(\d{1,2})\.(\d{1,2})(?:\.(\d{4}))?\b", replace_date, text)
+    text = re.sub(
+        r"\b(\d{1,2})\.?\s+(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)(?:\s+(\d{4})(?:\s+года?)?)?\b",
+        replace_named_date,
+        text,
+        flags=re.IGNORECASE,
+    )
     text = re.sub(r"\b(в|к|с|до)?\s*(\d{1,2}):(\d{2})\b", _time_to_words, text, flags=re.IGNORECASE)
     text = re.sub(r"\b(\d+)\s+(повторени[яй]|событи[яй]|встреч[аиу]|задач[аиу])\b", _count_to_words, text, flags=re.IGNORECASE)
+    text = re.sub(r"(?<![\d.])(\d{1,2})\.\s+(?=[а-яёa-z«])", _list_number_to_words, text, flags=re.IGNORECASE)
     return re.sub(r"(?<![\w.])(\d+)(?![\w.])", lambda match: _integer_to_words(int(match.group(1))), text)

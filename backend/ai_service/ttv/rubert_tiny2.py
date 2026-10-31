@@ -55,6 +55,10 @@ class RuBertTiny2Vectorizer(TextVectorizer):
             except Exception as error:
                 raise RuntimeError(f"Не удалось загрузить {self._config.model_id}: {error}")
 
+    def warmup(self) -> None:
+        """Load the model and run one inference so first search is responsive."""
+        self.encode("Прогрев модели семантического поиска")
+
     def _resolve_device(self):
         requested = self._config.device
         if requested == "cuda" and not torch.cuda.is_available():
