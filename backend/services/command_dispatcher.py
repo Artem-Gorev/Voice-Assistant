@@ -58,6 +58,7 @@ class BaseActionHandler(ABC):
     def run(self) -> str:
         pass
 
+
 @BaseActionHandler.register("create_event")
 class CreateEventHandler(BaseActionHandler):
     def run(self) -> str:
@@ -114,6 +115,7 @@ class ListEventsHandler(BaseActionHandler):
             text += f"{date_label}{time_label}— {title}. "
         return text
 
+
 @BaseActionHandler.register("search_events")
 class SearchEventsHandler(BaseActionHandler):
     def run(self) -> str:
@@ -139,6 +141,7 @@ class SearchEventsHandler(BaseActionHandler):
             text += f"{date_str} — {title}. "
         return text
 
+
 @BaseActionHandler.register("clarify")
 @BaseActionHandler.register("chat")
 class DefaultChatHandler(BaseActionHandler):
@@ -153,6 +156,7 @@ class DefaultChatHandler(BaseActionHandler):
 class EventManagementHandler(BaseActionHandler):
     def run(self) -> str:
         return self.dispatcher.manager.process(self.dispatcher.current_query["action"], self.dispatcher.current_query.get("data", {}), self.dispatcher.session_id)
+
 
 class CommandDispatcher:
     def __init__(self, collision_proc, event_repository, semantic_search_service, logger):

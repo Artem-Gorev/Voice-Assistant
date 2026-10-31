@@ -32,6 +32,27 @@ def make_fallback_response() -> LLMResult:
 
 FALLBACK_RESPONSE = make_fallback_response()
 
+GIGACHAT_RESPONSE_FORMAT = {
+    "type": "json_schema",
+    "schema": {
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "enum": [
+                    "create_event", "list_events", "search_events", "update_event",
+                    "delete_event", "complete_event", "clarify", "chat",
+                ],
+            },
+            "data": {"type": "object"},
+            "reply_text": {"type": ["string", "null"]},
+        },
+        "required": ["action", "data", "reply_text"],
+        "additionalProperties": False,
+    },
+    "strict": True,
+}
+
 
 def parse_json_payload(raw_text: str) -> dict[str, Any]:
     cleaned = raw_text.strip()
@@ -141,7 +162,13 @@ class LLMOrchestrator(LanguageModel):
 
             messages.append(Messages(role=MessagesRole.USER, content=user_text))
 
-            response = self._client.chat(Chat(messages=messages, temperature=0.1))
+            response = self._client.chat(
+                Chat(
+                    messages=messages,
+                    temperature=0.1,
+                    response_format=GIGACHAT_RESPONSE_FORMAT,
+                )
+            )
             raw_content = response.choices[0].message.content
             try:
                 payload = parse_json_payload(raw_content)
@@ -764,4 +791,3 @@ def _add_recurrence(payload: dict[str, Any], user_text: str) -> dict[str, Any]:
             return payload
         payload["data"] = data
     return payload
-
