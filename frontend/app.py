@@ -13,6 +13,7 @@ else:
     from frontend_core.components.common import glass_card, nav_button, style
     from frontend_core.state import State
 
+
 def index() -> rx.Component:
 
     return rx.box(
@@ -98,6 +99,7 @@ def index() -> rx.Component:
         """)],
 
     )
+
 
 app = rx.App(api_transformer=audio_api_transformer)
 app.add_page(index)

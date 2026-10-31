@@ -3,14 +3,8 @@ import logging
 import re
 import threading
 from datetime import date, datetime, timedelta, timezone
-from pathlib import Path
-import sys
 
 import reflex as rx
-
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
 
 from backend.audio.audio_handler import decode_audio_bytes
 from backend.text_normalizer import normalize_text_for_speech
@@ -20,6 +14,7 @@ _assistant_lock = threading.RLock()
 _assistant_logger = logging.getLogger("voice_assistant.frontend")
 _assistant_ready = False
 _assistant_startup_error: str | None = None
+
 
 def _get_assistant():
     global _assistant_instance
@@ -32,6 +27,7 @@ def _get_assistant():
             speak=True,
         )
     return _assistant_instance
+
 
 def _serialize_events(rows: list[dict]) -> list[dict]:
     values = []
@@ -79,9 +75,11 @@ def _serialize_events(rows: list[dict]) -> list[dict]:
         })
     return sorted(values, key=lambda event: event["sort_key"])
 
+
 def _read_calendar_events(assistant=None) -> list[dict]:
     instance = assistant or _get_assistant()
     return _serialize_events(instance._repository.get_all_events())
+
 
 def _preload_assistant() -> list[dict]:
     global _assistant_ready, _assistant_startup_error
@@ -99,10 +97,12 @@ def _preload_assistant() -> list[dict]:
             _assistant_logger.exception("Не удалось подготовить ассистента при запуске")
             raise
 
+
 def _require_assistant_ready():
     if not _assistant_ready:
         reason = _assistant_startup_error or "модели ещё загружаются"
         raise RuntimeError(f"Ассистент пока не готов: {reason}")
+
 
 def _play_audio_script(audio_data: str):
     if not audio_data:
@@ -119,8 +119,8 @@ def _play_audio_script(audio_data: str):
     )
     return rx.call_script(script)
 
+
 def _process_text(text: str, session_id: str, voice_output: bool) -> tuple[str, str, list[dict]]:
-    global _assistant_ready
     with _assistant_lock:
         _require_assistant_ready()
         assistant = _get_assistant()
@@ -134,6 +134,7 @@ def _process_text(text: str, session_id: str, voice_output: bool) -> tuple[str, 
                 _assistant_logger.exception("Не удалось озвучить ответ")
         events = _read_calendar_events(assistant)
         return answer, audio_data, events
+
 
 def _process_audio(
     audio_bytes: bytes,
@@ -155,6 +156,7 @@ def _process_audio(
                 _assistant_logger.exception("Не удалось озвучить ответ")
         events = _read_calendar_events(assistant)
     return transcript, answer, audio_data, events
+
 
 def _limit_spoken_answer(answer: str, limit: int = 900) -> str:
     if len(normalize_text_for_speech(answer)) <= limit:
@@ -198,6 +200,7 @@ def _limit_spoken_answer(answer: str, limit: int = 900) -> str:
         if len(normalize_text_for_speech(f"{chosen} {suffix}")) <= limit:
             chosen = f"{chosen} {suffix}"
     return chosen or "Ответ слишком длинный для озвучивания. Посмотрите его в чате."
+
 
 def _assistant_is_ready() -> bool:
     return _assistant_ready

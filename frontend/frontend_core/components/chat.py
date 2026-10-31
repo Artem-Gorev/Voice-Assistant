@@ -4,6 +4,7 @@ from ..state import State
 from .common import glass_card
 from .calendar import mini_calendar, workload_panel
 
+
 def render_message(msg: dict) -> rx.Component:
 
     is_user = msg["role"] == "user"
@@ -45,13 +46,14 @@ def render_message(msg: dict) -> rx.Component:
 
     )
 
+
 def chat_view():
 
     return rx.hstack(
 
         rx.vstack(
 
-glass_card(
+            glass_card(
 
                 rx.scroll_area(
 
@@ -90,16 +92,21 @@ glass_card(
                             rx.icon(tag=rx.cond(State.voice_output, "volume-2", "volume-x"), size=18),
                             type="button", on_click=State.toggle_voice_output,
                             title=rx.cond(State.voice_output, "Отключить озвучивание", "Включить озвучивание"),
-                            background=rx.cond(State.voice_output,
+                            background=rx.cond(
+                                State.voice_output,
                                 "linear-gradient(145deg, #8eb5ff, #6e8bea)",
-                                "light-dark(rgba(103,143,235,0.13), rgba(123,158,255,0.16))"),
+                                "light-dark(rgba(103,143,235,0.13), rgba(123,158,255,0.16))",
+                            ),
                             color=rx.cond(State.voice_output, "#ffffff", "#82a6ff"),
                             border_radius="12px", width="42px", height="42px",
                         ),
                         rx.box(
                             rx.text_area(
-                                placeholder=rx.cond(State.is_recording, "",
-                                                   "Напишите сообщение или задайте вопрос…"),
+                                placeholder=rx.cond(
+                                    State.is_recording,
+                                    "",
+                                    "Напишите сообщение или задайте вопрос…",
+                                ),
                                 value=State.user_input, on_change=State.set_user_input,
                                 enter_key_submit=True, flex="1",
                                 background="transparent !important", border="none !important",

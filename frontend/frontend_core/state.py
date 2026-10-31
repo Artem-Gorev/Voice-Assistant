@@ -9,12 +9,11 @@ from reflex.config import get_config
 
 from .assistant_service import (
     _assistant_is_ready,
-    _assistant_logger,
     _play_audio_script,
     _preload_assistant,
     _process_text,
-    _read_calendar_events,
 )
+
 
 class State(rx.State):
 
@@ -46,7 +45,6 @@ class State(rx.State):
     today: str = str(datetime.now().day)
 
     @rx.var
-
     def month_name(self) -> str:
 
         months = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
@@ -54,7 +52,6 @@ class State(rx.State):
         return months[self.current_month - 1]
 
     @rx.var
-
     def month_name_genitive(self) -> str:
 
         months = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"]
@@ -62,7 +59,6 @@ class State(rx.State):
         return months[self.current_month - 1]
 
     @rx.var
-
     def calendar_days(self) -> list[str]:
 
         cal = calendar.monthcalendar(self.current_year, self.current_month)
@@ -96,7 +92,6 @@ class State(rx.State):
         return (days + [""] * 42)[:42]
 
     @rx.var
-
     def modal_month_name(self) -> str:
 
         months = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
@@ -104,7 +99,6 @@ class State(rx.State):
         return months[self.modal_month - 1]
 
     @rx.var
-
     def modal_month_name_genitive(self) -> str:
 
         months = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"]
@@ -112,7 +106,6 @@ class State(rx.State):
         return months[self.modal_month - 1]
 
     @rx.var
-
     def modal_calendar_days(self) -> list[str]:
 
         cal = calendar.monthcalendar(self.modal_year, self.modal_month)
@@ -682,7 +675,6 @@ class State(rx.State):
         return result
 
     @rx.var
-
     def week_range_label(self) -> str:
 
         today = date.today()

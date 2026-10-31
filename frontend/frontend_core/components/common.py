@@ -61,6 +61,7 @@ COLORS = {
 
 }
 
+
 def glass_card(*children, **kwargs):
 
     base = {
@@ -81,6 +82,7 @@ def glass_card(*children, **kwargs):
     base.update(kwargs)
 
     return rx.box(*children, **base)
+
 
 def nav_button(label: str, icon: str, value: str):
 

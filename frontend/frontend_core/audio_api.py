@@ -17,6 +17,7 @@ _audio_dir_setting = Path(
 AUDIO_DIR = _audio_dir_setting.expanduser().resolve()
 AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 
+
 async def audio_start(recording_id: str):
 
     try:
@@ -32,6 +33,7 @@ async def audio_start(recording_id: str):
     temp_path.write_bytes(b"")
 
     return {"ok": True}
+
 
 async def audio_chunk(recording_id: str, request: Request):
 
@@ -60,6 +62,7 @@ async def audio_chunk(recording_id: str, request: Request):
         audio_file.write(data)
 
     return {"ok": True, "bytes": len(data)}
+
 
 async def audio_finish(recording_id: str, request: Request):
 
@@ -113,6 +116,7 @@ async def audio_finish(recording_id: str, request: Request):
         "events": events,
     }
 
+
 async def audio_cancel(recording_id: str):
 
     try:
@@ -126,6 +130,7 @@ async def audio_cancel(recording_id: str):
     (AUDIO_DIR / f".{safe_id}.part").unlink(missing_ok=True)
 
     return {"ok": True}
+
 
 async def _audio_route(
     request: Request,
@@ -151,21 +156,26 @@ async def _audio_route(
 
         return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
 
+
 async def _audio_start_route(request: Request):
 
     return await _audio_route(request, audio_start)
+
 
 async def _audio_chunk_route(request: Request):
 
     return await _audio_route(request, audio_chunk, needs_body=True)
 
+
 async def _audio_finish_route(request: Request):
 
     return await _audio_route(request, audio_finish, needs_request=True)
 
+
 async def _audio_cancel_route(request: Request):
 
     return await _audio_route(request, audio_cancel)
+
 
 def audio_api_transformer(api):
 

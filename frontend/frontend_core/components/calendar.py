@@ -5,6 +5,7 @@ import reflex as rx
 from ..state import State
 from .common import glass_card
 
+
 def calendar_grid(days, selectable=False, compact=False):
     shown_month = State.full_month if selectable else State.current_month
     shown_year = State.full_year if selectable else State.current_year
@@ -110,6 +111,7 @@ def calendar_grid(days, selectable=False, compact=False):
 
     )
 
+
 def mini_calendar():
 
     weekdays = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
@@ -154,6 +156,7 @@ def mini_calendar():
 
     )
 
+
 def workload_panel():
     return glass_card(
         rx.vstack(
@@ -171,9 +174,11 @@ def workload_panel():
                                                   "light-dark(#71809c, #aab7d5)")),
                             width="100%", height="28px", border_radius="9px",
                             display="flex", align_items="center", justify_content="center",
-                            background=rx.cond(day["count"].to(int) > 0,
+                            background=rx.cond(
+                                day["count"].to(int) > 0,
                                 "linear-gradient(145deg, #8eb5ff, #6e8bea)",
-                                "light-dark(rgba(112,151,239,0.10), rgba(112,151,239,0.12))"),
+                                "light-dark(rgba(112,151,239,0.10), rgba(112,151,239,0.12))",
+                            ),
                         ),
                         align="center", spacing="1",
                     ),
@@ -185,6 +190,7 @@ def workload_panel():
         ),
         padding="10px", width="100%",
     )
+
 
 def week_view():
 
@@ -230,13 +236,18 @@ def week_view():
                                     color=rx.cond(day["is_today"], "#78aefb",
                                                   "light-dark(#34415a, #eff3ff)")),
                             width="100%", min_width="0", align="center", spacing="0",
-                            background=rx.cond(day["is_today"],
+                            background=rx.cond(
+                                day["is_today"],
                                 "light-dark(rgba(120,174,251,0.16), rgba(120,174,251,0.18))",
-                                "transparent"),
+                                "transparent",
+                            ),
                             padding="9px 2px", border_radius="13px 13px 0 0",
-                            border=rx.cond(day["is_today"],
+                            border=rx.cond(
+                                day["is_today"],
                                 "1px solid light-dark(rgba(120,174,251,0.22), rgba(120,174,251,0.24))",
-                                "1px solid transparent")),
+                                "1px solid transparent",
+                            ),
+                        ),
                     ),
                     columns="7", width="100%", flex="1", min_width="0",
                     grid_template_columns="repeat(7, minmax(0, 1fr))", gap="0px"),
@@ -279,9 +290,11 @@ def week_view():
                                     ),
                                     position="absolute", top=event["top"], left="3px", right="3px",
                                     height=event["height"], min_height="30px", overflow="hidden",
-                                    background=rx.cond(event["active"].to(bool),
+                                    background=rx.cond(
+                                        event["active"].to(bool),
                                         "light-dark(rgba(112,151,239,0.25), rgba(112,151,239,0.28))",
-                                        "light-dark(rgba(130,140,158,0.18), rgba(130,140,158,0.20))"),
+                                        "light-dark(rgba(130,140,158,0.18), rgba(130,140,158,0.20))",
+                                    ),
                                     border="1px solid light-dark(rgba(112,151,239,0.45), rgba(112,151,239,0.48))",
                                     border_radius="9px", padding="6px", z_index="2",
                                 ),
@@ -326,6 +339,7 @@ def week_view():
 
                "&::-webkit-scrollbar": {"display": "none", "width": "0px", "height": "0px"}})
 
+
 def calendar_view():
 
     return rx.vstack(
@@ -345,41 +359,41 @@ def calendar_view():
 
                 rx.button("Месяц", on_click=lambda: State.set_calendar_mode("month"),
 
-                          background=rx.cond(State.calendar_mode == "month",
-
+                          background=rx.cond(
+                              State.calendar_mode == "month",
                               "linear-gradient(145deg, #8eb5ff, #6e8bea)",
-
-                              "light-dark(rgba(226,233,246,0.55), rgba(255,255,255,0.05))"),
-
-                          color=rx.cond(State.calendar_mode == "month", "#ffffff",
-
-                              "light-dark(#53617a, #c4cee3)"),
-
-                          border=rx.cond(State.calendar_mode == "month",
-
+                              "light-dark(rgba(226,233,246,0.55), rgba(255,255,255,0.05))",
+                          ),
+                          color=rx.cond(
+                              State.calendar_mode == "month",
+                              "#ffffff",
+                              "light-dark(#53617a, #c4cee3)",
+                          ),
+                          border=rx.cond(
+                              State.calendar_mode == "month",
                               "1px solid rgba(255,255,255,0.28)",
-
-                              "1px solid light-dark(rgba(255,255,255,0.55), rgba(255,255,255,0.08))"),
+                              "1px solid light-dark(rgba(255,255,255,0.55), rgba(255,255,255,0.08))",
+                          ),
 
                           border_radius="11px", padding="7px 13px", box_shadow=rx.cond(State.calendar_mode == "month", "0 3px 12px rgba(85,120,200,0.22)", "none")),
 
                 rx.button("Неделя", on_click=lambda: State.set_calendar_mode("week"),
 
-                          background=rx.cond(State.calendar_mode == "week",
-
+                          background=rx.cond(
+                              State.calendar_mode == "week",
                               "linear-gradient(145deg, #8eb5ff, #6e8bea)",
-
-                              "light-dark(rgba(226,233,246,0.55), rgba(255,255,255,0.05))"),
-
-                          color=rx.cond(State.calendar_mode == "week", "#ffffff",
-
-                              "light-dark(#53617a, #c4cee3)"),
-
-                          border=rx.cond(State.calendar_mode == "week",
-
+                              "light-dark(rgba(226,233,246,0.55), rgba(255,255,255,0.05))",
+                          ),
+                          color=rx.cond(
+                              State.calendar_mode == "week",
+                              "#ffffff",
+                              "light-dark(#53617a, #c4cee3)",
+                          ),
+                          border=rx.cond(
+                              State.calendar_mode == "week",
                               "1px solid rgba(255,255,255,0.28)",
-
-                              "1px solid light-dark(rgba(255,255,255,0.55), rgba(255,255,255,0.08))"),
+                              "1px solid light-dark(rgba(255,255,255,0.55), rgba(255,255,255,0.08))",
+                          ),
 
                           border_radius="11px", padding="7px 13px", box_shadow=rx.cond(State.calendar_mode == "week", "0 3px 12px rgba(85,120,200,0.22)", "none")),
 
@@ -407,9 +421,13 @@ def calendar_view():
 
                                       border_radius="12px", width="38px", min_width="38px", height="38px", flex_shrink="0"),
 
-                            rx.box(rx.heading(State.full_month_name + " " + State.full_year.to_string(),
-
-                                       size="5", color="light-dark(#34415a, #eff3ff)", text_align="center"),
+                            rx.box(
+                                rx.heading(
+                                    State.full_month_name + " " + State.full_year.to_string(),
+                                    size="5",
+                                    color="light-dark(#34415a, #eff3ff)",
+                                    text_align="center",
+                                ),
 
                                    width="250px", min_width="250px", text_align="center", flex_shrink="0"),
 
@@ -456,9 +474,15 @@ def calendar_view():
 
                                    color="light-dark(#34415a, #eff3ff)"),
 
-                        rx.foreach(State.selected_day_events,
-                                   lambda event: rx.text(event, font_size="13px", font_weight="500",
-                                       color="light-dark(#34415a, #eff3ff)")),
+                        rx.foreach(
+                            State.selected_day_events,
+                            lambda event: rx.text(
+                                event,
+                                font_size="13px",
+                                font_weight="500",
+                                color="light-dark(#34415a, #eff3ff)",
+                            ),
+                        ),
 
                         rx.cond(State.selected_day_events.length() == 0,
                                 rx.text("На эту дату событий нет.", font_size="13px",
