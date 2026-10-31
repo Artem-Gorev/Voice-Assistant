@@ -12,20 +12,24 @@ logging.basicConfig(level=logging.INFO, format="[ %(levelname)s ] %(message)s")
 logger = logging.getLogger("ETL")
 
 
-def run_etl(csv_path: str = "data/voice_assistant_events_1000_77e927b5d2.csv") -> int:
+def run_etl(csv_path: str = "data/cleaned_events_1000.csv") -> int:
     if not os.path.exists(csv_path):
-        alt_path = os.path.join("..", "..", csv_path)
-        if os.path.exists(alt_path):
-            csv_path = alt_path
+        fallback = "data/voice_assistant_events_1000.csv"
+        if os.path.exists(fallback):
+            csv_path = fallback
         else:
-            logger.error(f"[DB]: Файл {csv_path} не найден.")
-            return 1
+            alt_path = os.path.join("..", "..", csv_path)
+            if os.path.exists(alt_path):
+                csv_path = alt_path
+            else:
+                logger.error(f"[DB]: Файл {csv_path} не найден.")
+                return 1
 
     df = pd.read_csv(csv_path)
     logger.info(f"[DB]: Обработка {len(df)} записей из {csv_path}...")
 
-    text_col = [c for c in df.columns if c.lower() in ["text", "title", "event", "описание", "событие"]][0]
-    dt_col = [c for c in df.columns if c.lower() in ["date", "datetime", "scheduled_at", "время", "дата"]][0]
+    text_col = [c for c in df.columns if c.lower() in ["original_text", "text", "title", "event", "описание", "событие"]][0]
+    dt_col = [c for c in df.columns if c.lower() in ["start_time", "date", "datetime", "scheduled_at", "время", "дата"]][0]
 
     current_date = datetime.now().date()
     records = []
