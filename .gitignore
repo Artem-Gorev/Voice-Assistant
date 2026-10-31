@@ -1,3 +1,4 @@
+*.part
 *.webm
 .web
 *.py[cod]

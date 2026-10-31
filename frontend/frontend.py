@@ -1,15 +1,17 @@
 import calendar
-from datetime import datetime
+from datetime import datetime, date, timedelta
 import reflex as rx
 from typing import Any
 import base64
 import os
 import uuid
 from pathlib import Path
+from fastapi import Request, HTTPException
+from starlette.responses import JSONResponse
 
 # Глобальные стили для скроллбара
 style = {
-    "::-webkit-scrollbar": {"display": "none"},
+    "::-webkit-scrollbar": {"width": "0px", "height": "0px", "display": "none"},
     "@keyframes pulse": {
         "0%": {"boxShadow": "0 0 0 0 rgba(255, 77, 77, 0.55)"},
         "70%": {"boxShadow": "0 0 0 8px rgba(255, 77, 77, 0)"},
@@ -142,99 +144,137 @@ class State(rx.State):
             self.input_key += 1
             self.messages = self.messages + [{"role": "ai", "text": "Я пока не умею отвечать, но скоро научусь!"}]
 
-    # --- УПРАВЛЕНИЕ ЗАПИСЬЮ ---
+
+    # --- ПОТОКОВАЯ ЗАПИСЬ: фрагменты отправляются на сервер каждые 5 секунд ---
     def start_recording(self):
-        self.is_recording = True
-        # Весь код выполняется непосредственно через Reflex call_script.
-        # Это не зависит от того, выполнил ли React отдельный <script> в дереве компонентов.
+        # Не переключаем UI в режим записи, пока браузер не получил микрофон
+        # и сервер не создал временный файл.
         return rx.call_script("""
             (async () => {
+                if (window.__voiceStarting || window.__voiceRecorder) return false;
+                window.__voiceStarting = true;
                 try {
-                    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                        throw new Error("Микрофон доступен только через HTTPS или localhost.");
+                    if (!navigator.mediaDevices?.getUserMedia) {
+                        throw new Error("Для доступа к микрофону откройте приложение через HTTPS или localhost.");
                     }
-                    if (!window.MediaRecorder) {
-                        throw new Error("Браузер не поддерживает MediaRecorder.");
-                    }
+                    if (!window.MediaRecorder) throw new Error("Браузер не поддерживает MediaRecorder.");
 
-                    window.__voiceChunks = [];
-                    window.__voiceFinalBase64 = null;
-                    window.__voiceStream = await navigator.mediaDevices.getUserMedia({audio: true});
-
+                    const stream = await navigator.mediaDevices.getUserMedia({audio: true});
                     const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
                         ? "audio/webm;codecs=opus"
                         : "audio/webm";
+                    const recordingId = crypto.randomUUID();
+                    // Reflex frontend runs on :3000; custom ASGI routes are served by backend :8000.
+                    const audioApiBase = window.location.protocol + "//" + window.location.hostname + ":8000";
+                    window.__voiceAudioApiBase = audioApiBase;
+                    const init = await fetch(audioApiBase + "/audio/start/" + recordingId, {method: "POST"});
+                    if (!init.ok) {
+                        const detail = await init.text().catch(() => "");
+                        throw new Error("Сервер не смог начать запись (HTTP " + init.status + "): " + detail);
+                    }
 
-                    window.__voiceRecorder = new MediaRecorder(window.__voiceStream, {mimeType});
-                    window.__voiceRecorder.ondataavailable = (event) => {
-                        if (event.data && event.data.size > 0) window.__voiceChunks.push(event.data);
+                    window.__voiceStream = stream;
+                    window.__voiceRecordingId = recordingId;
+                    window.__voiceUploadQueue = Promise.resolve();
+                    window.__voiceUploadError = null;
+                    window.__voiceStartedAt = Date.now();
+
+                    const recorder = new MediaRecorder(stream, {mimeType});
+                    window.__voiceRecorder = recorder;
+                    recorder.ondataavailable = (event) => {
+                        if (!event.data || !event.data.size) return;
+                        // Каждый кусочек отправляется отдельно; весь файл не кодируется в Base64.
+                        window.__voiceUploadQueue = window.__voiceUploadQueue.then(async () => {
+                            if (window.__voiceUploadError) return;
+                            const response = await fetch(
+                                window.__voiceAudioApiBase + "/audio/chunk/" + recordingId,
+                                {method: "POST", headers: {"Content-Type": "application/octet-stream"}, body: event.data}
+                            );
+                            if (!response.ok) {
+                                const detail = await response.text().catch(() => "");
+                                throw new Error("Не удалось передать фрагмент аудио (HTTP " + response.status + "): " + detail);
+                            }
+                        }).catch(error => {
+                            window.__voiceUploadError = error.message || String(error);
+                            console.error("Audio chunk upload failed:", error);
+                        });
                     };
 
-                    // Анализатор громкости для живой звуковой волны.
+                    // Небольшая визуализация громкости микрофона.
                     window.__voiceAudioContext = new (window.AudioContext || window.webkitAudioContext)();
                     window.__voiceAnalyser = window.__voiceAudioContext.createAnalyser();
                     window.__voiceAnalyser.fftSize = 128;
-                    window.__voiceAudioContext.createMediaStreamSource(window.__voiceStream)
-                        .connect(window.__voiceAnalyser);
+                    window.__voiceAudioContext.createMediaStreamSource(stream).connect(window.__voiceAnalyser);
                     window.__voiceFrequencyData = new Uint8Array(window.__voiceAnalyser.frequencyBinCount);
-                    window.__voiceStartedAt = Date.now();
-                    window.__voiceTimer = window.setInterval(() => {
-                        const elapsed = Math.floor((Date.now() - window.__voiceStartedAt) / 1000);
-                        const timer = document.getElementById('voice-recording-timer');
-                        if (timer) timer.textContent = String(Math.floor(elapsed / 60)).padStart(2, '0') + ':' + String(elapsed % 60).padStart(2, '0');
+
+                    window.__voiceTimer = setInterval(() => {
+                        const seconds = Math.floor((Date.now() - window.__voiceStartedAt) / 1000);
+                        const timer = document.getElementById("voice-recording-timer");
+                        if (timer) timer.textContent =
+                            String(Math.floor(seconds / 60)).padStart(2, "0") + ":" +
+                            String(seconds % 60).padStart(2, "0");
                     }, 250);
+
                     const animateWave = () => {
                         if (!window.__voiceAnalyser) return;
                         window.__voiceAnalyser.getByteFrequencyData(window.__voiceFrequencyData);
-                        for (let i = 0; i < 36; i++) {
-                            const bar = document.getElementById('voice-wave-' + i);
+                        for (let i = 0; i < 28; i++) {
+                            const bar = document.getElementById("voice-wave-" + i);
                             if (!bar) continue;
                             const value = window.__voiceFrequencyData[i % window.__voiceFrequencyData.length] || 0;
-                            bar.style.height = (5 + value / 255 * 34) + 'px';
+                            bar.style.height = (4 + value / 255 * 24) + "px";
                         }
                         window.__voiceAnimationFrame = requestAnimationFrame(animateWave);
                     };
                     animateWave();
-                    window.__voiceRecorder.start();
+                    recorder.start(5000); // отправка аудиофрагментов раз в 5 секунд
                     return true;
                 } catch (error) {
                     console.error("Не удалось начать запись:", error);
                     alert("Не удалось начать запись: " + (error.message || error));
-                    if (window.__voiceStream) {
-                        window.__voiceStream.getTracks().forEach(track => track.stop());
-                        window.__voiceStream = null;
-                    }
+                    if (window.__voiceStream) window.__voiceStream.getTracks().forEach(t => t.stop());
+                    window.__voiceStream = null;
+                    window.__voiceRecorder = null;
+                    window.__voiceRecordingId = null;
                     return false;
+                } finally {
+                    window.__voiceStarting = false;
                 }
             })()
-        """)
+        """, callback=State.handle_recording_started)
+
+    def handle_recording_started(self, result: bool):
+        self.is_recording = bool(result)
 
     def cancel_recording(self):
-        """Останавливает запись и удаляет её временные данные без сохранения."""
         self.is_recording = False
         return rx.call_script("""
-            (() => {
+            (async () => {
+                const recorder = window.__voiceRecorder;
+                const recordingId = window.__voiceRecordingId;
                 if (window.__voiceTimer) clearInterval(window.__voiceTimer);
                 if (window.__voiceAnimationFrame) cancelAnimationFrame(window.__voiceAnimationFrame);
-                if (window.__voiceRecorder && window.__voiceRecorder.state !== "inactive") {
-                    window.__voiceRecorder.ondataavailable = null;
-                    window.__voiceRecorder.onstop = null;
-                    window.__voiceRecorder.stop();
+                if (recorder && recorder.state !== "inactive") {
+                    await new Promise(resolve => {
+                        recorder.onstop = resolve;
+                        recorder.stop();
+                    });
                 }
-                if (window.__voiceStream) {
-                    window.__voiceStream.getTracks().forEach(track => track.stop());
+                try {
+                    await (window.__voiceUploadQueue || Promise.resolve());
+                    if (recordingId) await fetch(window.__voiceAudioApiBase + "/audio/cancel/" + recordingId, {method: "DELETE"});
+                } finally {
+                    if (window.__voiceStream) window.__voiceStream.getTracks().forEach(t => t.stop());
+                    if (window.__voiceAudioContext) await window.__voiceAudioContext.close();
                     window.__voiceStream = null;
-                }
-                if (window.__voiceAudioContext) window.__voiceAudioContext.close();
-                window.__voiceAudioContext = null;
-                window.__voiceAnalyser = null;
-                window.__voiceChunks = [];
-                window.__voiceRecorder = null;
-                const timer = document.getElementById('voice-recording-timer');
-                if (timer) timer.textContent = '00:00';
-                for (let i = 0; i < 36; i++) {
-                    const bar = document.getElementById('voice-wave-' + i);
-                    if (bar) bar.style.height = '5px';
+                    window.__voiceAudioContext = null;
+                    window.__voiceAnalyser = null;
+                    window.__voiceRecorder = null;
+                    window.__voiceRecordingId = null;
+                    for (let i = 0; i < 28; i++) {
+                        const bar = document.getElementById("voice-wave-" + i);
+                        if (bar) bar.style.height = "4px";
+                    }
                 }
                 return true;
             })()
@@ -242,293 +282,692 @@ class State(rx.State):
 
     def stop_recording(self):
         self.is_recording = False
-        # Promise завершается только после формирования Blob и чтения его в Base64.
         return rx.call_script("""
-            (() => new Promise((resolve) => {
+            (async () => {
                 const recorder = window.__voiceRecorder;
-                if (!recorder || recorder.state === "inactive") {
-                    resolve("");
-                    return;
+                const recordingId = window.__voiceRecordingId;
+                if (!recorder || !recordingId || recorder.state === "inactive") {
+                    window.__voiceStarting = false;
+                    throw new Error("Запись ещё не началась или уже завершена. Нажмите на микрофон ещё раз.");
+                }
+                if (window.__voiceTimer) clearInterval(window.__voiceTimer);
+                if (window.__voiceAnimationFrame) cancelAnimationFrame(window.__voiceAnimationFrame);
+
+                if (recorder.state !== "inactive") {
+                    await new Promise(resolve => {
+                        recorder.onstop = resolve;
+                        recorder.stop();
+                    });
+                }
+                await (window.__voiceUploadQueue || Promise.resolve());
+                if (window.__voiceUploadError) {
+                    throw new Error("Не все фрагменты дошли до сервера: " + window.__voiceUploadError);
+                }
+                const response = await fetch(window.__voiceAudioApiBase + "/audio/finish/" + recordingId, {method: "POST"});
+                if (!response.ok) {
+                    const detail = await response.text().catch(() => "");
+                    throw new Error("Сервер не смог завершить сохранение аудио (HTTP " + response.status + "): " + detail);
                 }
 
-                recorder.onstop = () => {
-                    if (window.__voiceTimer) clearInterval(window.__voiceTimer);
-                    if (window.__voiceAnimationFrame) cancelAnimationFrame(window.__voiceAnimationFrame);
-                    if (window.__voiceAudioContext) window.__voiceAudioContext.close();
-                    window.__voiceAnalyser = null;
-                    const chunks = window.__voiceChunks || [];
-                    const blob = new Blob(chunks, {type: recorder.mimeType || "audio/webm"});
+                if (window.__voiceStream) window.__voiceStream.getTracks().forEach(t => t.stop());
+                if (window.__voiceAudioContext) await window.__voiceAudioContext.close();
+                window.__voiceStream = null;
+                window.__voiceAudioContext = null;
+                window.__voiceAnalyser = null;
+                window.__voiceRecorder = null;
+                window.__voiceRecordingId = null;
+                const saved = await response.json();
+                return "Запись сохранена на сервере: " + saved.path + " (" + saved.bytes + " байт).";
+            })()
+        """, callback=State.handle_chunked_audio_saved)
 
-                    if (blob.size === 0) {
-                        if (window.__voiceStream) {
-                            window.__voiceStream.getTracks().forEach(track => track.stop());
-                            window.__voiceStream = null;
-                        }
-                        resolve("");
-                        return;
-                    }
+    def handle_chunked_audio_saved(self, result: str):
+        self.messages = self.messages + [
+            {"role": "user", "text": "🎙️ [Голосовое сообщение]"},
+            {"role": "ai", "text": result or "Голосовая запись сохранена на сервере."},
+        ]
 
-                    // Никаких скачиваний в браузер: аудио передаётся только серверу.
+    def set_calendar_mode(self, mode: str):
+        self.calendar_mode = mode
 
-                    const reader = new FileReader();
-                    reader.onloadend = () => {
-                        if (window.__voiceStream) {
-                            window.__voiceStream.getTracks().forEach(track => track.stop());
-                            window.__voiceStream = null;
-                        }
-                        window.__voiceFinalBase64 = reader.result || "";
-                        resolve(window.__voiceFinalBase64);
-                    };
-                    reader.onerror = () => resolve("");
-                    reader.readAsDataURL(blob);
-                };
+    def previous_week(self):
+        self.week_offset -= 1
 
-                recorder.stop();
-            }))()
-        """, callback=State.handle_audio_data)
+    def next_week(self):
+        self.week_offset += 1
 
-    def handle_audio_data(self, audio_base64: str):
-        """Сохраняет запись в каталог recordings на компьютере с Python-бэкендом."""
-        if not audio_base64:
-            self.messages = self.messages + [
-                {"role": "ai", "text": "Ошибка: браузер не передал аудиоданные."}
-            ]
-            return
+    def go_to_current_week(self):
+        self.week_offset = 0
+        self.calendar_mode = "week"
 
-        try:
-            if "," in audio_base64:
-                header, encoded = audio_base64.split(",", 1)
-                if not header.startswith("data:audio/"):
-                    raise ValueError("Полученные данные не распознаны как аудио.")
-            else:
-                encoded = audio_base64
 
-            audio_bytes = base64.b64decode(encoded, validate=True)
-            if not audio_bytes:
-                raise ValueError("Аудиозапись пустая.")
+    @rx.var
+    def week_days_data(self) -> list[dict]:
+        today = date.today()
+        monday = today - timedelta(days=today.weekday()) + timedelta(days=self.week_offset * 7)
+        result = []
+        names = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+        for i in range(7):
+            d = monday + timedelta(days=i)
+            result.append({
+                "label": names[i],
+                "date": d.strftime("%d"),
+                "iso": d.isoformat(),
+                "is_today": d == today,
+                "full": d.strftime("%d.%m.%Y"),
+            })
+        return result
 
-            recordings_dir = Path(os.getenv("AUDIO_RECORDINGS_DIR", "recordings"))
-            recordings_dir.mkdir(parents=True, exist_ok=True)
+    @rx.var
+    def week_range_label(self) -> str:
+        today = date.today()
+        monday = today - timedelta(days=today.weekday()) + timedelta(days=self.week_offset * 7)
+        sunday = monday + timedelta(days=6)
+        return f"{monday:%d.%m} — {sunday:%d.%m.%Y}"
 
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"recording_{timestamp}_{uuid.uuid4().hex[:8]}.webm"
-            file_path = recordings_dir / filename
-            file_path.write_bytes(audio_bytes)
+    @rx.var
+    def current_time_label(self) -> str:
+        now = datetime.now()
+        return now.strftime("%H:%M")
 
-            self.messages = self.messages + [
-                {"role": "user", "text": "🎙️ [Голосовое сообщение]"},
-                {
-                    "role": "ai",
-                    "text": (
-                        f"Запись сохранена на сервере: {file_path.as_posix()} "
-                        f"({len(audio_bytes)} байт)."
-                    ),
-                },
-            ]
-            print(f"--- АУДИО СОХРАНЕНО --- {file_path} ({len(audio_bytes)} байт)")
-        except Exception as e:
-            print(f"Ошибка при сохранении аудио: {e}")
-            self.messages = self.messages + [
-                {"role": "ai", "text": f"Ошибка сохранения аудио: {str(e)}"}
-            ]
+    @rx.var
+    def current_time_top(self) -> str:
+        now = datetime.now()
+        minutes = max(0, min(14 * 60, now.hour * 60 + now.minute - 7 * 60))
+        return f"{minutes * 0.6}px"
+
+    # Переключение разделов единой панели
+    active_view: str = "chat"
+    calendar_mode: str = "month"
+    week_offset: int = 0
+    selected_date_iso: str = date.today().isoformat()
+
+    def show_chat(self):
+        self.active_view = "chat"
+
+    def show_calendar(self):
+        self.active_view = "calendar"
 
 # --- 3. КОМПОНЕНТЫ ---
 def render_message(msg: dict) -> rx.Component:
     is_user = msg["role"] == "user"
     return rx.box(
-        rx.text(msg["text"], white_space="pre-wrap"),
-        background=rx.cond(is_user, COLORS["user_msg_bg"], COLORS["ai_msg_bg"]),
-        color=rx.cond(is_user, "#ffffff", COLORS["text_main"]),
-        padding="16px 20px",
-        border_radius="16px",
-        border_bottom_right_radius=rx.cond(is_user, "4px", "16px"),
-        border_bottom_left_radius=rx.cond(is_user, "16px", "4px"),
-        border=rx.cond(is_user, "none", f"1px solid rgba(196, 167, 135, 0.3)"),
-        max_width="70%",
+        rx.text(msg["text"], white_space="pre-wrap", line_height="1.55"),
+        background=rx.cond(
+            is_user,
+            "linear-gradient(145deg, rgba(112,151,239,0.94), rgba(104,128,221,0.92))",
+            "light-dark(rgba(255,255,255,0.72), rgba(255,255,255,0.075))",
+        ),
+        color=rx.cond(is_user, "#ffffff", "light-dark(#34415a, #e9efff)"),
+        padding="14px 18px", border_radius="20px",
+        border_bottom_right_radius=rx.cond(is_user, "6px", "20px"),
+        border_bottom_left_radius=rx.cond(is_user, "20px", "6px"),
+        border=rx.cond(is_user, "1px solid rgba(255,255,255,0.22)",
+                       "1px solid light-dark(rgba(255,255,255,0.82), rgba(255,255,255,0.12))"),
+        max_width="min(78%, 680px)",
         align_self=rx.cond(is_user, "flex-end", "flex-start"),
-        box_shadow="0 4px 15px rgba(0, 0, 0, 0.3)",
+        box_shadow="0 8px 24px rgba(20,35,65,0.08)",
+        style={"backdropFilter": "blur(18px)", "WebkitBackdropFilter": "blur(18px)"},
     )
 
-def index() -> rx.Component:
-    return rx.hstack(
-        # Запись аудио выполняется через rx.call_script в обработчиках State.
-        
-        # ЦЕНТРАЛЬНАЯ ПАНЕЛЬ (ЧАТ)
-        rx.vstack(
-            rx.scroll_area(
-                rx.vstack(
-                    rx.foreach(State.messages, render_message),
-                    width="100%", padding="40px", gap="24px",
+def glass_card(*children, **kwargs):
+    """Reusable translucent VisionOS-like surface."""
+    base = {
+        "background": "light-dark(rgba(255,255,255,0.58), rgba(30,34,46,0.48))",
+        "border": "1px solid light-dark(rgba(255,255,255,0.78), rgba(255,255,255,0.13))",
+        "border_radius": "26px",
+        "box_shadow": "0 18px 55px rgba(0,0,0,0.10), inset 0 1px 0 rgba(255,255,255,0.35)",
+        "style": {"backdropFilter": "blur(28px) saturate(155%)", "WebkitBackdropFilter": "blur(28px) saturate(155%)"},
+    }
+    base.update(kwargs)
+    return rx.box(*children, **base)
+
+
+def nav_button(label: str, icon: str, value: str):
+    return rx.button(
+        rx.hstack(rx.icon(tag=icon, size=17), rx.text(label, font_size="14px", font_weight="600"),
+                  align="center", spacing="2"),
+        on_click=State.show_chat if value == "chat" else State.show_calendar,
+        background=rx.cond(
+            State.active_view == value,
+            "light-dark(rgba(255,255,255,0.82), rgba(255,255,255,0.16))",
+            "transparent",
+        ),
+        color="light-dark(#253047, #f2f5ff)",
+        border=rx.cond(State.active_view == value,
+                       "1px solid light-dark(rgba(255,255,255,0.95), rgba(255,255,255,0.18))",
+                       "1px solid transparent"),
+        border_radius="16px", padding="10px 16px", cursor="pointer",
+        box_shadow=rx.cond(State.active_view == value, "0 4px 18px rgba(0,0,0,0.08)", "none"),
+        transition="all 180ms ease",
+    )
+
+
+
+def calendar_grid(days, selectable=False):
+    return rx.grid(
+        rx.foreach(
+            days,
+            lambda day: rx.box(
+                rx.text(day, font_size="14px",
+                        font_weight=rx.cond(day == State.today, "700", "500")),
+                background=rx.cond(
+                    day == "", "transparent",
+                    rx.cond(
+                        (State.current_month == datetime.now().month) &
+                        (State.current_year == datetime.now().year) &
+                        (day == State.today),
+                        "linear-gradient(145deg, #78aefb, #657fe8)",
+                        rx.cond(State.selected_day == day,
+                                "light-dark(rgba(93,139,226,0.20), rgba(117,158,255,0.22))",
+                                "transparent")
+                    )
                 ),
-                type="scroll", scrollbars="vertical", style={"height": "100%", "flex": "1"},
-            ),
+                color=rx.cond(
+                    day == "", "transparent",
+                    rx.cond(
+                        (State.current_month == datetime.now().month) &
+                        (State.current_year == datetime.now().year) &
+                        (day == State.today),
+                        "#ffffff", "light-dark(#34415a, #e8edff)")
+                ),
+                border=rx.cond((day != "") & (State.selected_day != "") & (State.selected_day == day),
+                               "1px solid light-dark(rgba(83,125,210,0.45), rgba(130,166,255,0.45))",
+                               "1px solid transparent"),
+                border_radius="15px", display="flex", align_items="center",
+                justify_content="center", width="100%", height="clamp(54px, 7vh, 76px)",
+                cursor=rx.cond(day == "", "default", "pointer"),
+                on_click=State.select_day(day) if selectable else None,
+            )
+        ),
+        columns="7", width="100%",
+        grid_template_columns="repeat(7, minmax(0, 1fr))", gap="6px",
+        align_content="center", justify_content="stretch",
+        height="100%", min_height="0",
+    )
+
+
+
+def mini_calendar():
+    weekdays = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+    return glass_card(
+        rx.vstack(
+            rx.hstack(
+                rx.text(State.month_name + " " + State.current_year.to_string(),
+                        font_weight="700", color="light-dark(#34415a, #eff3ff)"),
+                rx.spacer(),
+                rx.button(rx.icon(tag="chevron-left", size=14), on_click=State.prev_month,
+                          size="1", variant="ghost"),
+                rx.button(rx.icon(tag="chevron-right", size=14), on_click=State.next_month,
+                          size="1", variant="ghost"),
+                width="100%", align="center"),
+            rx.grid(*[rx.text(d, text_align="center", font_size="10px",
+                              color="light-dark(#8490a5, #9eabc7)") for d in weekdays],
+                    columns="7", width="100%", grid_template_columns="repeat(7, minmax(0, 1fr))"),
+            calendar_grid(State.calendar_days),
+            spacing="2", width="100%"),
+        padding="10px", width="100%",
+    )
+
+
+def workload_panel():
+    # Загруженность считается по существующим демонстрационным задачам.
+    counts = [0, 1, 0, 1, 0, 0, 0]
+    day_labels = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+    return glass_card(
+        rx.vstack(
+            rx.text("ЗАГРУЖЕННОСТЬ НЕДЕЛИ", font_size="10px",
+                    letter_spacing="1.4px", font_weight="700",
+                    color="light-dark(#71809c, #aab7d5)"),
+            rx.grid(*[
+                rx.vstack(
+                    rx.text(day_labels[i], font_size="11px",
+                            color="light-dark(#71809c, #aab7d5)"),
+                    rx.box(width="100%", height="26px", border_radius="9px",
+                           background=["light-dark(rgba(112,151,239,0.10), rgba(112,151,239,0.12))",
+                                       "light-dark(rgba(112,151,239,0.72), rgba(112,151,239,0.62))",
+                                       "light-dark(rgba(112,151,239,0.10), rgba(112,151,239,0.12))",
+                                       "light-dark(rgba(112,151,239,0.72), rgba(112,151,239,0.62))",
+                                       "light-dark(rgba(112,151,239,0.10), rgba(112,151,239,0.12))",
+                                       "light-dark(rgba(112,151,239,0.10), rgba(112,151,239,0.12))",
+                                       "light-dark(rgba(112,151,239,0.10), rgba(112,151,239,0.12))"][i]),
+                    rx.text(str(counts[i]), font_size="10px",
+                            color="light-dark(#71809c, #aab7d5)"),
+                    align="center", spacing="1")
+                for i in range(7)],
+                columns="7", width="100%", gap="5px"),
+            spacing="2", width="100%"),
+        padding="10px", width="100%",
+    )
+
+
+def chat_view():
+    return rx.hstack(
+        rx.vstack(
+            rx.vstack(
+                rx.text("ВАШ AI-АССИСТЕНТ", font_size="10px", letter_spacing="2px",
+                        font_weight="700", color="light-dark(#71809c, #aab7d5)"),
+                rx.heading("Добро пожаловать", size="6",
+                           color="light-dark(#253047, #f3f6ff)"),
+                rx.text("Общайтесь текстом или голосом — я рядом, чтобы помочь.",
+                        color="light-dark(#68758d, #aab5cb)", font_size="14px"),
+                spacing="1", align="start"),
+            glass_card(
+                rx.scroll_area(
+                    rx.vstack(rx.foreach(State.messages, render_message),
+                              width="100%", padding="12px", gap="10px"),
+                    type="scroll", scrollbars="vertical",
+                    style={"height": "100%", "minHeight": "0", "flex": "1", "overflowY": "auto"}),
+                width="100%", flex="1", min_height="0", height="100%", padding="3px", style={"minHeight": 0}),
             rx.cond(
                 State.is_recording,
-                rx.vstack(
+                glass_card(
                     rx.hstack(
-                        rx.box(width="8px", height="8px", border_radius="50%", background="#ff4d4d", animation="pulse 1s infinite"),
-                        rx.text("Идёт запись", color="#ff7777", font_size="13px", font_weight="600"),
+                        rx.hstack(
+                            rx.box(width="7px", height="7px", border_radius="50%",
+                                   background="#ff596d", animation="pulse 1s infinite"),
+                            rx.text("Запись", font_size="12px", font_weight="700",
+                                    color="light-dark(#d43c56, #ff8294)"), spacing="2"),
                         rx.spacer(),
-                        rx.text("00:00", id="voice-recording-timer", color=COLORS["text_main"], font_size="14px", font_weight="600", font_family="monospace"),
-                        rx.button("Отменить", on_click=State.cancel_recording, size="1", variant="ghost", color=COLORS["text_muted"], background="transparent"),
-                        width="100%", align_items="center",
-                    ),
+                        rx.text("00:00", id="voice-recording-timer",
+                                font_size="13px", font_weight="700",
+                                font_family="monospace",
+                                color="light-dark(#34415a, #f2f5ff)"),
+                        rx.button("Отмена", on_click=State.cancel_recording,
+                                  size="1", variant="ghost"),
+                        width="100%", align="center"),
+                    rx.hstack(*[
+                        rx.box(id=f"voice-wave-{i}", width="3px", height="4px",
+                               min_height="4px", background="linear-gradient(180deg, #9bb9ff, #6588e8)",
+                               border_radius="full", transition="height 80ms linear")
+                        for i in range(28)],
+                        width="100%", height="34px", align="center",
+                        justify="center", spacing="1"),
+                    width="100%", padding="6px 10px", gap="3px"),
+                rx.fragment()),
+            glass_card(
+                rx.form(
                     rx.hstack(
-                        *[rx.box(id=f"voice-wave-{i}", width="4px", height="5px", min_height="5px", background="#c4a787", border_radius="4px", transition="height 80ms linear") for i in range(36)],
-                        width="100%", height="44px", align_items="center", justify_content="center", spacing="1",
-                    ),
-                    width="100%", max_width="800px", padding="12px 18px", margin_bottom="10px",
-                    background="rgba(255, 77, 77, 0.07)", border="1px solid rgba(255, 77, 77, 0.25)", border_radius="16px",
-                ),
-                rx.fragment(),
-            ),
-            rx.form(
-                rx.hstack(
-                    rx.text_area(
-                        placeholder="Введите задачу или вопрос...",
-                        value=State.user_input, on_change=State.set_user_input, enter_key_submit=True,
-                        flex="1", background="transparent !important", border="none !important",
-                        box_shadow="none !important", outline="none !important", color=COLORS["text_main"],
-                        _placeholder={"color": COLORS["text_muted"]}, resize="none", rows="1",
-                        auto_height=True, min_height="0", padding="8px 0", key=State.input_key,
-                    ),
-                    # Кнопка микрофона
-                    rx.button(
-                        rx.icon(tag=rx.cond(State.is_recording, "square", "mic"), size=20),
-                        type="button",
-                        background=rx.cond(State.is_recording, "rgba(255, 0, 0, 0.2)", "rgba(168, 132, 98, 0.15)"), 
-                        color=rx.cond(State.is_recording, "#ff4d4d", COLORS["text_accent"]),
-                        border_radius="50%", width="42px", height="42px", flex_shrink="0",
-                        on_click=rx.cond(State.is_recording, State.stop_recording, State.start_recording),
-                    ),
-                    rx.button(
-                        rx.icon(tag="send", size=20),
-                        type="submit", background=COLORS["btn_send_bg"], color="#1c1612",
-                        border_radius="50%", width="42px", height="42px", flex_shrink="0",
-                    ),
-                    width="100%", align_items="flex-end",
-                ),
-                on_submit=State.send_message, width="100%", max_width="800px",
-                background=COLORS["input_bg"], border=f"1px solid {COLORS['input_border']}",
-                border_radius="24px", padding="8px 8px 8px 20px", box_shadow="0 4px 20px rgba(0, 0, 0, 0.4)",
-            ),
-            width="100%", height="100vh", padding="20px 40px 30px", justify_content="center", align_items="center", flex="1", z_index="5",
-        ),
-
-        # ПРАВАЯ ПАНЕЛЬ (КАЛЕНДАРЬ)
+                        rx.text_area(
+                            placeholder=rx.cond(State.is_recording, "Идёт запись голосового сообщения…",
+                                                "Напишите сообщение или задайте вопрос…"),
+                            value=State.user_input, on_change=State.set_user_input,
+                            enter_key_submit=True, flex="1",
+                            background="transparent !important", border="none !important",
+                            box_shadow="none !important", outline="none !important",
+                            color="light-dark(#253047, #f2f5ff)",
+                            resize="none", rows="1", auto_height=False,
+                            height="42px", max_height="88px", overflow_y="auto",
+                            min_height="0", padding="10px 4px", key=State.input_key,
+                            disabled=State.is_recording),
+                        rx.button(rx.icon(tag=rx.cond(State.is_recording, "square", "mic"), size=18),
+                                  type="button",
+                                  on_click=rx.cond(State.is_recording, State.stop_recording, State.start_recording),
+                                  background=rx.cond(State.is_recording, "rgba(255,80,100,0.16)",
+                                                     "light-dark(rgba(103,143,235,0.13), rgba(123,158,255,0.16))"),
+                                  color=rx.cond(State.is_recording, "#ff6478", "#82a6ff"),
+                                  border_radius="14px", width="42px", height="42px"),
+                        rx.button(rx.icon(tag="arrow-up", size=19), type="submit",
+                                  disabled=State.is_recording,
+                                  background="linear-gradient(145deg, #8eb5ff, #6e8bea)",
+                                  color="#ffffff", border_radius="14px",
+                                  width="42px", height="42px"),
+                        width="100%", align="end", spacing="2"),
+                    on_submit=State.send_message, width="100%"),
+                width="100%", padding="6px 8px", style={"flexShrink": 0}),
+            width="100%", height="100%", flex="1", min_height="0",
+            style={"display": "flex", "flexDirection": "column", "minHeight": 0, "overflow": "hidden"},
+            align="stretch", spacing="2"),
         rx.vstack(
-            rx.text("Календарь", font_size="13px", font_weight="600", text_transform="uppercase", color=COLORS["text_accent"], letter_spacing="1px", margin_bottom="8px"),
-            
-            rx.vstack(
-                rx.text(State.month_name + " " + State.current_year.to_string(), font_size="16px", font_weight="600", color=COLORS["text_accent"], margin_bottom="10px", text_align="center", width="100%"),
-                rx.grid(*[rx.text(day, color=COLORS["text_muted"], font_size="11px", text_align="center") for day in ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]], columns="7", width="100%", margin_bottom="8px"),
-                rx.grid(
-                    rx.foreach(
-                        State.calendar_days,
-                        lambda day: rx.box(
-                            day,
-                            color=rx.cond(day == "", "transparent", rx.cond(day == State.today, "#ffffff", COLORS["text_main"])),
-                            background=rx.cond(day == "", "transparent", rx.cond(day == State.today, "#a88462", "transparent")),
-                            border_radius="50%", display="flex", align_items="center", justify_content="center",
-                            height="30px", width="30px", margin="auto", font_size="13px", font_weight=rx.cond(day == State.today, "bold", "normal"),
-                        )
-                    ),
-                    columns="7", width="100%",
-                    grid_template_columns="repeat(7, minmax(0, 1fr))",
-                    gap="8px",
-                ),
-                background="rgba(20, 15, 12, 0.5)", border="1px solid rgba(168, 132, 98, 0.2)", border_radius="12px",
-                padding="15px", margin_bottom="10px", width="100%", aspect_ratio="1 / 1",
-            ),
-            
-            rx.dialog.root(
-                rx.dialog.trigger(
-                    rx.button(
-                        "Развернуть календарь", width="100%", background="rgba(168, 132, 98, 0.15)", border="1px solid rgba(168, 132, 98, 0.4)",
-                        color=COLORS["text_accent"], padding="12px", border_radius="8px",
-                        font_size="13px", font_weight="600", text_transform="uppercase", letter_spacing="1px", cursor="pointer",
-                    ),
-                ),
-                rx.dialog.content(
-                    rx.hstack(
-                        rx.vstack(
-                            rx.hstack(
-                                rx.button("←", on_click=State.modal_prev_month, background="none", border="none", color=COLORS["text_accent"], cursor="pointer", font_size="20px"),
-                                rx.box(
-                                    rx.heading(State.modal_month_name + " " + State.modal_year.to_string(), font_size="20px", color=COLORS["text_accent"]),
-                                    width="160px", display="flex", justify_content="center",
-                                ),
-                                rx.button("→", on_click=State.modal_next_month, background="none", border="none", color=COLORS["text_accent"], cursor="pointer", font_size="20px"),
-                                rx.spacer(),
-                                rx.dialog.close(rx.button("✕", background="none", border="none", color=COLORS["text_muted"], cursor="pointer")),
-                                width="100%", margin_bottom="20px", align_items="center",
-                            ),
-                            rx.grid(
-                                rx.text("Пн", color=COLORS["text_muted"], font_size="12px", text_align="center"),
-                                rx.text("Вт", color=COLORS["text_muted"], font_size="12px", text_align="center"),
-                                rx.text("Ср", color=COLORS["text_muted"], font_size="12px", text_align="center"),
-                                rx.text("Чт", color=COLORS["text_muted"], font_size="12px", text_align="center"),
-                                rx.text("Пт", color=COLORS["text_muted"], font_size="12px", text_align="center"),
-                                rx.text("Сб", color=COLORS["text_muted"], font_size="12px", text_align="center"),
-                                rx.text("Вс", color=COLORS["text_muted"], font_size="12px", text_align="center"),
-                                columns="7", spacing="2", width="100%", margin_bottom="10px",
-                            ),
-                            rx.grid(
-                                rx.foreach(
-                                    State.modal_calendar_days,
-                                    lambda day: rx.box(
-                                        day,
-                                        background=rx.cond(day == "", "transparent", rx.cond(State.selected_day == day, "#a88462", "rgba(60, 45, 35, 0.3)")),
-                                        color=rx.cond(day == "", "transparent", rx.cond(State.selected_day == day, "#1c1612", COLORS["text_main"])),
-                                        font_weight=rx.cond(State.selected_day == day, "bold", "normal"),
-                                        border_radius="8px", display="flex", align_items="center", justify_content="center",
-                                        cursor=rx.cond(day == "", "default", "pointer"),
-                                        _hover={"background": rx.cond(day == "", "transparent", rx.cond(State.selected_day == day, "#a88462", "rgba(168, 132, 98, 0.3)"))},
-                                        on_click=lambda e, d=day: State.select_day(d),
-                                        height="50px",
-                                    )
-                                ),
-                                columns="7", spacing="2", flex="1", width="100%",
-                            ),
-                            flex="1", padding="30px", border_right="1px solid rgba(168, 132, 98, 0.2)", height="100%",
-                        ),
-                        rx.vstack(
-                            rx.text(
-                                rx.cond(State.selected_day == "", "Выберите день", f"События на {State.selected_day} {State.modal_month_name_genitive}"),
-                                font_size="14px", text_transform="uppercase", color=COLORS["text_muted"], margin_bottom="20px", letter_spacing="1px"
-                            ),
-                            rx.box(
-                                rx.text("10:00", color=COLORS["text_accent"], font_size="12px", display="block", margin_bottom="4px"),
-                                rx.text("Позвонить Ивану", font_size="14px"),
-                                background="rgba(60, 45, 35, 0.6)", border_left="3px solid #a88462", padding="12px", border_radius="6px", margin_bottom="10px", width="100%",
-                            ),
-                            width="300px", padding="30px", background="rgba(20, 15, 12, 0.5)", height="100%", flex_shrink="0",
-                        ),
-                        height="500px", width="800px", max_width="90vw",
-                    ),
-                    background=COLORS["modal_content"], border="1px solid rgba(168, 132, 98, 0.4)", padding="0", max_width="fit-content", overflow="hidden",
-                ),
-            ),
-            rx.text("Ближайшие события", font_size="13px", font_weight="600", text_transform="uppercase", color=COLORS["text_accent"], letter_spacing="1px", margin_top="16px", margin_bottom="8px"),
-            rx.vstack(
-                rx.box(
-                    rx.text("Сегодня, 15:00", color=COLORS["text_accent"], font_weight="600", font_size="11px", text_transform="uppercase", display="block", margin_bottom="4px"),
-                    rx.text("Встреча с командой", font_size="13px", line_height="1.4"),
-                    background=COLORS["item_bg"], border_left=f"3px solid {COLORS['item_border']}", border_radius="8px", padding="14px", width="100%", cursor="pointer",
-                ),
-                rx.box(
-                    rx.text("Завтра, 10:00", color=COLORS["text_accent"], font_weight="600", font_size="11px", text_transform="uppercase", display="block", margin_bottom="4px"),
-                    rx.text("Позвонить Ивану", font_size="13px", line_height="1.4"),
-                    background=COLORS["item_bg"], border_left=f"3px solid {COLORS['item_border']}", border_radius="8px", padding="14px", width="100%", cursor="pointer",
-                ),
-                width="100%", gap="12px",
-            ),
-            width="340px", height="100vh", background=COLORS["panel_bg"],
-            style={"backdropFilter": "blur(16px)", "WebkitBackdropFilter": "blur(16px)"},
-            border_left=f"1px solid {COLORS['panel_border']}", padding="24px 20px", gap="12px", z_index="10",
-        ),
-        background=COLORS["bg_gradient"], width="100%", height="100vh", spacing="0", overflow="hidden", style=style,
+            mini_calendar(),
+            glass_card(
+                rx.vstack(
+                    rx.text("БЛИЖАЙШИЕ СОБЫТИЯ", font_size="10px",
+                            letter_spacing="1.4px", font_weight="700",
+                            color="light-dark(#71809c, #aab7d5)"),
+                    rx.vstack(
+                        rx.hstack(rx.icon(tag="users", color="#789df3"),
+                                  rx.vstack(rx.text("Сегодня · 15:00", font_size="11px",
+                                                    color="light-dark(#71809c, #aab7d5)"),
+                                            rx.text("Встреча с командой", font_size="13px",
+                                                    font_weight="600",
+                                                    color="light-dark(#34415a, #eff3ff)"),
+                                            spacing="0", align="start"),
+                                  align="center", spacing="2"),
+                        rx.divider(color="subtle"),
+                        rx.hstack(rx.icon(tag="phone", color="#789df3"),
+                                  rx.vstack(rx.text("Завтра · 10:00", font_size="11px",
+                                                    color="light-dark(#71809c, #aab7d5)"),
+                                            rx.text("Позвонить Ивану", font_size="13px",
+                                                    font_weight="600",
+                                                    color="light-dark(#34415a, #eff3ff)"),
+                                            spacing="0", align="start"),
+                                  align="center", spacing="2"),
+                        width="100%", spacing="3"),
+                    width="100%", spacing="3"),
+                padding="11px", width="100%"),
+            workload_panel(),
+            width="290px", min_width="260px", height="100%",
+            align="stretch", spacing="2"),
+        width="100%", height="100%", align="stretch", spacing="3",
     )
 
-app = rx.App()
+
+
+def week_view():
+    return glass_card(
+        rx.vstack(
+            rx.hstack(
+                rx.button(rx.icon(tag="chevron-left", size=15), on_click=State.previous_week,
+                          background="light-dark(rgba(226,233,246,0.72), rgba(255,255,255,0.07))",
+                          color="light-dark(#53617a, #d5def0)", border="1px solid light-dark(rgba(255,255,255,0.7), rgba(255,255,255,0.1))",
+                          border_radius="10px", width="32px", height="32px"),
+                rx.heading(State.week_range_label, size="4",
+                           color="light-dark(#34415a, #eff3ff)"),
+                rx.button(rx.icon(tag="chevron-right", size=15), on_click=State.next_week,
+                          background="light-dark(rgba(226,233,246,0.72), rgba(255,255,255,0.07))",
+                          color="light-dark(#53617a, #d5def0)", border="1px solid light-dark(rgba(255,255,255,0.7), rgba(255,255,255,0.1))",
+                          border_radius="10px", width="32px", height="32px"),
+                rx.spacer(),
+                rx.hstack(rx.icon(tag="clock", size=13, color="#7399ef"),
+                          rx.text("Сейчас " + State.current_time_label, font_size="12px", font_weight="700",
+                                  color="light-dark(#53617a, #d5def0)"),
+                          background="light-dark(rgba(226,233,246,0.72), rgba(255,255,255,0.07))",
+                          border="1px solid light-dark(rgba(255,255,255,0.7), rgba(255,255,255,0.1))",
+                          border_radius="10px", padding="7px 10px", spacing="2"),
+                rx.button("Сегодня", on_click=State.go_to_current_week,
+                          background="linear-gradient(145deg, #8eb5ff, #6e8bea)",
+                          color="#ffffff", border_radius="10px", padding="7px 11px"),
+                width="100%", align="center"),
+            rx.grid(
+                rx.foreach(
+                    State.week_days_data,
+                    lambda day: rx.vstack(
+                        rx.text(day["label"], font_size="10px",
+                                color="light-dark(#8490a5, #9eabc7)"),
+                        rx.text(day["date"], font_size="18px", font_weight="700",
+                                color=rx.cond(day["is_today"], "#78aefb",
+                                              "light-dark(#34415a, #eff3ff)")),
+                        width="100%", align="center", spacing="0",
+                        background=rx.cond(day["is_today"],
+                            "light-dark(rgba(120,174,251,0.16), rgba(120,174,251,0.18))",
+                            "transparent"),
+                        padding="9px", border_radius="13px"),
+                ),
+                columns="7", width="100%",
+                grid_template_columns="repeat(7, minmax(0, 1fr))", gap="4px"),
+            rx.hstack(
+              rx.vstack(
+                *[rx.text(f"{hour:02d}:00", font_size="10px", line_height="1",
+                          color="light-dark(#8490a5, #9eabc7)", height="72px",
+                          width="42px", text_align="right", padding_top="0px")
+                  for hour in range(7, 20, 2)],
+                width="42px", min_width="42px", align="end", spacing="0",
+                padding_top="4px"),
+              rx.grid(
+                rx.foreach(
+                    State.week_days_data,
+                    lambda day: rx.box(
+                        rx.vstack(
+                            rx.cond(
+                                day["iso"] == State.week_days_data[0]["iso"],
+                                rx.box(
+                                    rx.vstack(
+                                        rx.text("Встреча с командой", font_size="11px",
+                                                font_weight="500"),
+                                        rx.text("15:00", font_size="10px"),
+                                        spacing="1"),
+                                    background="rgba(112,151,239,0.28)",
+                                    border="1px solid rgba(112,151,239,0.35)",
+                                    border_radius="10px", padding="7px",
+                                    margin_top="190px", width="100%"),
+                                rx.fragment()),
+                            rx.cond(
+                                day["iso"] == State.week_days_data[1]["iso"],
+                                rx.box(
+                                    rx.vstack(
+                                        rx.text("Позвонить Ивану", font_size="11px",
+                                                font_weight="500"),
+                                        rx.text("10:00", font_size="10px"),
+                                        spacing="1"),
+                                    background="rgba(89,190,170,0.25)",
+                                    border="1px solid rgba(89,190,170,0.35)",
+                                    border_radius="10px", padding="7px",
+                                    margin_top="90px", width="100%"),
+                                rx.fragment()),
+                            width="100%", align="stretch", spacing="2"),
+                        rx.cond(
+                            day["is_today"],
+                            rx.box(
+                                rx.box(width="7px", height="7px", border_radius="50%",
+                                       background="#3988f6", position="absolute",
+                                       left="-3px", top="-3px"),
+                                width="100%", height="2px",
+                                background="#3988f6",
+                                position="absolute", left="0", right="0",
+                                top=State.current_time_top, z_index="5",
+                                box_shadow="0 0 8px rgba(57,136,246,0.45)"),
+                            rx.fragment()),
+                        min_height="504px", height="504px", padding="4px", position="relative",
+                        border_left="1px solid light-dark(rgba(80,100,140,0.12), rgba(255,255,255,0.08))",
+                        background=rx.cond(day["is_today"],
+                            "light-dark(rgba(120,174,251,0.045), rgba(120,174,251,0.055))",
+                            "transparent"),
+                    ),
+                ),
+                columns="7", width="100%",
+                grid_template_columns="repeat(7, minmax(0, 1fr))", gap="0px"),
+              width="100%", align="start", spacing="2"),
+            rx.text("Шкала времени: 07:00–21:00 · синяя линия показывает текущее время. События пока демонстрационные: исходный проект не содержит хранилища или API событий.",
+                    font_size="11px", color="light-dark(#8994a9, #98a6c3)"),
+            width="100%", spacing="2"),
+        padding="12px", width="100%", overflow_x="auto",
+        style={"scrollbarWidth": "none", "msOverflowStyle": "none",
+               "&::-webkit-scrollbar": {"display": "none", "width": "0px", "height": "0px"}})
+
+
+def calendar_view():
+    return rx.vstack(
+        rx.hstack(
+            rx.vstack(
+                rx.text("ПЛАНИРОВАНИЕ", font_size="10px", letter_spacing="2px",
+                        font_weight="700", color="light-dark(#71809c, #aab7d5)"),
+                rx.heading("Календарь", size="6", color="light-dark(#253047, #f3f6ff)"),
+                rx.text("Ваше расписание в одном пространстве", font_size="14px",
+                        color="light-dark(#68758d, #aab5cb)"),
+                spacing="1", align="start"),
+            rx.spacer(),
+            rx.hstack(
+                rx.button("Месяц", on_click=lambda: State.set_calendar_mode("month"),
+                          background=rx.cond(State.calendar_mode == "month",
+                              "linear-gradient(145deg, #8eb5ff, #6e8bea)",
+                              "light-dark(rgba(226,233,246,0.55), rgba(255,255,255,0.05))"),
+                          color=rx.cond(State.calendar_mode == "month", "#ffffff",
+                              "light-dark(#53617a, #c4cee3)"),
+                          border=rx.cond(State.calendar_mode == "month",
+                              "1px solid rgba(255,255,255,0.28)",
+                              "1px solid light-dark(rgba(255,255,255,0.55), rgba(255,255,255,0.08))"),
+                          border_radius="11px", padding="7px 13px", box_shadow=rx.cond(State.calendar_mode == "month", "0 3px 12px rgba(85,120,200,0.22)", "none")),
+                rx.button("Неделя", on_click=lambda: State.set_calendar_mode("week"),
+                          background=rx.cond(State.calendar_mode == "week",
+                              "linear-gradient(145deg, #8eb5ff, #6e8bea)",
+                              "light-dark(rgba(226,233,246,0.55), rgba(255,255,255,0.05))"),
+                          color=rx.cond(State.calendar_mode == "week", "#ffffff",
+                              "light-dark(#53617a, #c4cee3)"),
+                          border=rx.cond(State.calendar_mode == "week",
+                              "1px solid rgba(255,255,255,0.28)",
+                              "1px solid light-dark(rgba(255,255,255,0.55), rgba(255,255,255,0.08))"),
+                          border_radius="11px", padding="7px 13px", box_shadow=rx.cond(State.calendar_mode == "week", "0 3px 12px rgba(85,120,200,0.22)", "none")),
+                spacing="1"),
+            width="100%", align="center", wrap="wrap"),
+        rx.cond(
+            State.calendar_mode == "month",
+            rx.hstack(
+                glass_card(
+                    rx.vstack(
+                        rx.hstack(
+                            rx.button(rx.icon(tag="chevron-left", size=16), on_click=State.prev_month,
+                                      background="light-dark(rgba(226,233,246,0.72), rgba(255,255,255,0.07))",
+                                      color="light-dark(#53617a, #d5def0)", border="1px solid light-dark(rgba(255,255,255,0.7), rgba(255,255,255,0.1))",
+                                      border_radius="11px", width="34px", height="34px"),
+                            rx.heading(State.month_name + " " + State.current_year.to_string(),
+                                       size="5", color="light-dark(#34415a, #eff3ff)"),
+                            rx.button(rx.icon(tag="chevron-right", size=16), on_click=State.next_month,
+                                      background="light-dark(rgba(226,233,246,0.72), rgba(255,255,255,0.07))",
+                                      color="light-dark(#53617a, #d5def0)", border="1px solid light-dark(rgba(255,255,255,0.7), rgba(255,255,255,0.1))",
+                                      border_radius="11px", width="34px", height="34px"),
+                            width="100%", justify="center", align="center"),
+                        rx.grid(*[
+                            rx.text(day, color="light-dark(#8490a5, #9eabc7)",
+                                    font_size="12px", font_weight="700", text_align="center")
+                            for day in ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]],
+                            columns="7", width="100%",
+                            grid_template_columns="repeat(7, minmax(0, 1fr))", gap="6px"),
+                        calendar_grid(State.calendar_days, selectable=True),
+                        width="100%", spacing="2"),
+                    width="58%", padding="18px", min_height="72vh", height="72vh"),
+                glass_card(
+                    rx.vstack(
+                        rx.text("СЕГОДНЯ", font_size="10px", letter_spacing="1.5px",
+                                font_weight="700", color="light-dark(#71809c, #aab7d5)"),
+                        rx.heading("События дня", size="5",
+                                   color="light-dark(#34415a, #eff3ff)"),
+                        rx.text("15:00 · Встреча с командой", font_weight="400",
+                                color="light-dark(#34415a, #eff3ff)"),
+                        rx.text("10:00 · Позвонить Ивану — завтра",
+                                color="light-dark(#68758d, #aab5cb)"),
+                        rx.text("События ниже пока демонстрационные: в исходном проекте нет хранилища событий.",
+                                font_size="11px", color="light-dark(#8994a9, #98a6c3)"),
+                        align="start", width="100%", spacing="3"),
+                    flex="1", padding="20px", min_height="72vh", height="72vh"),
+                width="100%", align="stretch", spacing="3"),
+            week_view()),
+        width="100%", height="100%", flex="1", min_height="0",
+        align="stretch", spacing="2")
+
+
+def index() -> rx.Component:
+    return rx.box(
+        rx.vstack(
+            # Верхняя стеклянная панель и переключатель разделов
+            glass_card(
+                rx.hstack(
+                    rx.hstack(
+                        rx.box(rx.icon(tag="audio-waveform", size=21, color="#7399ef"),
+                               background="light-dark(rgba(255,255,255,0.85), rgba(130,160,255,0.15))",
+                               border="1px solid light-dark(rgba(255,255,255,0.9), rgba(255,255,255,0.16))",
+                               border_radius="15px", padding="10px"),
+                        rx.vstack(rx.text("AURA", font_size="15px", font_weight="800", letter_spacing="2px",
+                                          color="light-dark(#2c3a55, #f2f5ff)"),
+                                  rx.text("PERSONAL ASSISTANT", font_size="9px", letter_spacing="1.5px",
+                                          color="light-dark(#8994a9, #98a6c3)"), spacing="0", align="start"),
+                        spacing="3", align="center"),
+                    rx.spacer(),
+                    rx.hstack(nav_button("Ассистент", "message-circle", "chat"),
+                              nav_button("Календарь", "calendar-days", "calendar"),
+                              background="light-dark(rgba(225,232,245,0.58), rgba(10,15,28,0.28))",
+                              border="1px solid light-dark(rgba(255,255,255,0.72), rgba(255,255,255,0.09))",
+                              border_radius="19px", padding="4px", spacing="1"),
+                    width="100%", align="center", wrap="wrap"),
+                width="100%", padding="8px 12px"),
+            rx.cond(State.active_view == "chat", chat_view(), calendar_view()),
+            width="100%", height="100%", max_width="1180px", padding="12px",
+            align="stretch", spacing="2", margin="0 auto",
+        ),
+        width="100%", height="100vh", overflow="hidden",
+        background="radial-gradient(ellipse at 12% 8%, light-dark(rgba(160,195,255,0.42), rgba(71,101,171,0.30)), transparent 42%), radial-gradient(ellipse at 90% 88%, light-dark(rgba(202,222,255,0.65), rgba(85,74,145,0.28)), transparent 44%), light-dark(#e8eef8, #101522)",
+        color="light-dark(#253047, #f2f5ff)",
+        style={**style, "colorScheme": "light dark", "backgroundAttachment": "fixed"},
+    )
+
+
+# Фрагменты записи временно хранятся на диске backend-сервера.
+_audio_dir_setting = Path(os.getenv("AUDIO_RECORDINGS_DIR", "recordings"))
+AUDIO_DIR = (_audio_dir_setting if _audio_dir_setting.is_absolute()
+             else Path(__file__).resolve().parent / _audio_dir_setting).resolve()
+AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+
+async def audio_start(recording_id: str):
+    try:
+        safe_id = str(uuid.UUID(recording_id))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid recording id")
+    temp_path = AUDIO_DIR / f".{safe_id}.part"
+    temp_path.write_bytes(b"")
+    return {"ok": True}
+
+async def audio_chunk(recording_id: str, request: Request):
+    try:
+        safe_id = str(uuid.UUID(recording_id))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid recording id")
+    data = await request.body()
+    if not data:
+        return {"ok": True, "bytes": 0}
+    if len(data) > 8 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Audio chunk too large")
+    temp_path = AUDIO_DIR / f".{safe_id}.part"
+    # Append creates the file if a start request was handled by another worker
+    # or its empty-file creation raced with the first chunk.
+    with temp_path.open("ab") as audio_file:
+        audio_file.write(data)
+    return {"ok": True, "bytes": len(data)}
+
+async def audio_finish(recording_id: str):
+    try:
+        safe_id = str(uuid.UUID(recording_id))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid recording id")
+    temp_path = AUDIO_DIR / f".{safe_id}.part"
+    if not temp_path.exists():
+        raise HTTPException(status_code=404, detail="Recording session not found")
+    if temp_path.stat().st_size == 0:
+        temp_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="Empty recording")
+    final_path = AUDIO_DIR / f"recording_{datetime.now():%Y%m%d_%H%M%S}_{safe_id[:8]}.webm"
+    temp_path.replace(final_path)
+    return {"ok": True, "path": final_path.as_posix(), "bytes": final_path.stat().st_size}
+
+async def audio_cancel(recording_id: str):
+    try:
+        safe_id = str(uuid.UUID(recording_id))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid recording id")
+    (AUDIO_DIR / f".{safe_id}.part").unlink(missing_ok=True)
+    return {"ok": True}
+
+# Reflex передаёт сюда ASGI-приложение Starlette. Используем add_route
+# и небольшие адаптеры: Starlette передаёт параметры пути через Request.
+async def _audio_route(request: Request, handler, needs_body: bool = False):
+    try:
+        recording_id = request.path_params["recording_id"]
+        if needs_body:
+            result = await handler(recording_id, request)
+        else:
+            result = await handler(recording_id)
+        return JSONResponse(result)
+    except HTTPException as exc:
+        return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+
+async def _audio_start_route(request: Request):
+    return await _audio_route(request, audio_start)
+
+async def _audio_chunk_route(request: Request):
+    return await _audio_route(request, audio_chunk, needs_body=True)
+
+async def _audio_finish_route(request: Request):
+    return await _audio_route(request, audio_finish)
+
+async def _audio_cancel_route(request: Request):
+    return await _audio_route(request, audio_cancel)
+
+def audio_api_transformer(api):
+    api.add_route("/audio/start/{recording_id}", _audio_start_route, methods=["POST"])
+    api.add_route("/audio/chunk/{recording_id}", _audio_chunk_route, methods=["POST"])
+    api.add_route("/audio/finish/{recording_id}", _audio_finish_route, methods=["POST"])
+    api.add_route("/audio/cancel/{recording_id}", _audio_cancel_route, methods=["DELETE"])
+    return api
+
+
+app = rx.App(api_transformer=audio_api_transformer)
 app.add_page(index)
