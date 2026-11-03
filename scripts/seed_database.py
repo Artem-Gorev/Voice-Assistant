@@ -3,7 +3,7 @@ import csv
 import logging
 import os
 import sys
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +11,7 @@ import psycopg2
 
 from backend.ai_service.ttv import RuBertTiny2Config, TextVectorizer
 from backend.database.config import get_db_config
+from backend.dal.datetime_utils import to_utc
 from backend.dal.nlp_utils import classify_event, lemmatize_text
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -49,9 +50,7 @@ def _parse_event_date(row: dict[str, str], line_number: int) -> datetime:
 
 
 def _as_utc(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
+    return to_utc(value)
 
 
 def _read_events(csv_path: Path) -> list[dict[str, Any]]:

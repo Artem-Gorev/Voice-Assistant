@@ -1,3 +1,4 @@
+import os
 import threading
 from time import perf_counter
 
@@ -29,7 +30,16 @@ class TOneRecognizer(SpeechRecognizer):
 
                 decoder_type = DecoderType.GREEDY if self._config.decoder == "greedy" else DecoderType.BEAM_SEARCH
                 self._logger.info(f"[STT]: Загрузка модели T-one '{self._config.model_id}'")
-                self._pipeline = StreamingCTCPipeline.from_hugging_face(decoder_type=decoder_type)
+                local_model_dir = os.getenv("T_ONE_MODEL_DIR")
+                if local_model_dir:
+                    self._pipeline = StreamingCTCPipeline.from_local(
+                        local_model_dir,
+                        decoder_type=decoder_type,
+                    )
+                else:
+                    self._pipeline = StreamingCTCPipeline.from_hugging_face(
+                        decoder_type=decoder_type,
+                    )
 
             except Exception as error:
                 raise RuntimeError(f"Не удалось загрузить T-one: {error}")

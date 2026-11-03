@@ -7,6 +7,7 @@ import numpy as np
 from backend.ai_service.llm import LLMConfig, LLMOrchestrator
 from backend.ai_service.ttv import RuBertTiny2Config, TextVectorizer
 from backend.audio import AudioHandler
+from backend.dal.datetime_utils import get_app_timezone
 from backend.dal.event_repository import EventRepository
 from backend.services import CollisionProcessor, CommandDispatcher, SemanticSearchService
 
@@ -124,7 +125,7 @@ class VoiceAssistant:
         self._logger.info(f"Пользователь: {normalized_text}")
         response = self._dispatcher.process_followup(normalized_text, session_id=session_id)
         if response is None:
-            current_datetime = datetime.now().astimezone()
+            current_datetime = datetime.now(get_app_timezone())
             result = self._llm.process(normalized_text, session_id=session_id, current_dt=current_datetime)
             self._logger.debug(f"[LLM]:\n{result.model_dump_json(indent=2)}")
             response = self._dispatcher.process_llm_response(

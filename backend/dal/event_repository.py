@@ -1,11 +1,19 @@
 import logging
 import os
-from datetime import date, time, datetime, timezone
+from datetime import date, time, datetime
 from typing import Any
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
-from backend.dal.datetime_utils import _normalize_date, _normalize_time, _normalize_datetime, _extract_date_time
+from backend.dal.datetime_utils import (
+    _extract_date_time,
+    _normalize_date,
+    _normalize_datetime,
+    _normalize_time,
+    get_app_timezone,
+    to_local_naive,
+    to_utc,
+)
 from backend.dal.nlp_utils import lemmatize_text, classify_event
 
 
@@ -77,11 +85,11 @@ class EventRepository:
             )
         )
         start_val = data.get("start_time")
-        if isinstance(start_val, datetime) and start_val.tzinfo is not None:
-            start_val = start_val.astimezone(timezone.utc).replace(tzinfo=None)
+        if isinstance(start_val, datetime):
+            start_val = to_local_naive(start_val)
         end_val = data.get("end_time")
-        if isinstance(end_val, datetime) and end_val.tzinfo is not None:
-            end_val = end_val.astimezone(timezone.utc).replace(tzinfo=None)
+        if isinstance(end_val, datetime):
+            end_val = to_local_naive(end_val)
         ev_date, ev_time = _extract_date_time(start_val)
         if ev_date is None and ("event_date" in data or "date" in data):
             ev_date = _normalize_date(data.get("event_date") or data.get("date"))
@@ -109,10 +117,11 @@ class EventRepository:
 
         query = (
             "SELECT * FROM events "
-            "WHERE (start_time AT TIME ZONE 'UTC')::date = %(target_date)s AND start_time > %(target_dt)s "
+            "WHERE (start_time AT TIME ZONE %(timezone)s)::date = %(target_date)s AND start_time > %(target_dt)s "
             "ORDER BY start_time ASC LIMIT 1;"
         )
-        params = {"target_date": t_date, "target_dt": target_dt.replace(tzinfo=timezone.utc)}
+        params = {"target_date": t_date, "target_dt": to_utc(target_dt),
+                  "timezone": str(get_app_timezone())}
         try:
             with self._get_cursor() as cur:
                 cur.execute(query, params)
@@ -130,10 +139,11 @@ class EventRepository:
 
         query = (
             "SELECT * FROM events "
-            "WHERE (start_time AT TIME ZONE 'UTC')::date = %(target_date)s AND start_time < %(target_dt)s "
+            "WHERE (start_time AT TIME ZONE %(timezone)s)::date = %(target_date)s AND start_time < %(target_dt)s "
             "ORDER BY start_time DESC LIMIT 1;"
         )
-        params = {"target_date": t_date, "target_dt": target_dt.replace(tzinfo=timezone.utc)}
+        params = {"target_date": t_date, "target_dt": to_utc(target_dt),
+                  "timezone": str(get_app_timezone())}
         try:
             with self._get_cursor() as cur:
                 cur.execute(query, params)
@@ -149,10 +159,10 @@ class EventRepository:
 
         query = (
             "SELECT * FROM events "
-            "WHERE (start_time AT TIME ZONE 'UTC')::date = %(target_date)s "
+            "WHERE (start_time AT TIME ZONE %(timezone)s)::date = %(target_date)s "
             "ORDER BY start_time ASC;"
         )
-        params = {"target_date": t_date}
+        params = {"target_date": t_date, "timezone": str(get_app_timezone())}
         try:
             with self._get_cursor() as cur:
                 cur.execute(query, params)
@@ -170,10 +180,11 @@ class EventRepository:
 
         query = (
             "SELECT * FROM events "
-            "WHERE (start_time AT TIME ZONE 'UTC')::date BETWEEN %(start_date)s AND %(end_date)s "
+            "WHERE (start_time AT TIME ZONE %(timezone)s)::date BETWEEN %(start_date)s AND %(end_date)s "
             "ORDER BY start_time ASC;"
         )
-        params = {"start_date": s_date, "end_date": e_date}
+        params = {"start_date": s_date, "end_date": e_date,
+                  "timezone": str(get_app_timezone())}
         try:
             with self._get_cursor() as cur:
                 cur.execute(query, params)
@@ -253,8 +264,8 @@ class EventRepository:
             "normalized_text": normalized_text,
             "event_type": event_type,
             "status": status,
-            "start_time": start_dt.replace(tzinfo=timezone.utc) if start_dt.tzinfo is None else start_dt.astimezone(timezone.utc),
-            "end_time": end_dt.replace(tzinfo=timezone.utc) if end_dt.tzinfo is None else end_dt.astimezone(timezone.utc),
+            "start_time": to_utc(start_dt),
+            "end_time": to_utc(end_dt),
             "embedding": embedding_val,
             "series_id": data.get("series_id"),
         }
@@ -292,9 +303,9 @@ class EventRepository:
             params.extend([title, lemmatize_text(title), classify_event(title)])
         if start_time is not None:
             fields.extend(["start_time = %s", "end_time = %s"])
-            new_start = start_time.replace(tzinfo=timezone.utc) if start_time.tzinfo is None else start_time.astimezone(timezone.utc)
+            new_start = to_utc(start_time)
             new_end = end_time or start_time
-            new_end = new_end.replace(tzinfo=timezone.utc) if new_end.tzinfo is None else new_end.astimezone(timezone.utc)
+            new_end = to_utc(new_end)
             params.extend([new_start, new_end])
         if not fields:
             return
