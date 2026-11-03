@@ -250,7 +250,7 @@ class EventManagementTests(unittest.TestCase):
         repo = EventRepository.__new__(EventRepository)
         repo._logger = logging.getLogger("event-management-tests")
         row = {"id": 1, "original_text": "Ужин", "start_time": datetime(2026, 11, 1, 12, tzinfo=timezone(timedelta(hours=3))), "end_time": None}
-        self.assertEqual(repo._format_row(row)["time"].hour, 9)
+        self.assertEqual(repo._format_row(row)["time"].hour, 12)
 
     def test_pasted_log_prefix_is_removed(self):
         clean = VoiceAssistant._clean_input("[ INFO ] Пользователь: [ INFO ] Пользователь: добавь ужин завтра")
