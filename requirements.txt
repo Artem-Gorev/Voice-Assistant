@@ -11,6 +11,7 @@ huggingface-hub>=0.14,<1.0
 omegaconf>=2.3,<3.0
 onnxruntime
 pyctcdecode
+tone @ git+https://github.com/voicekit-team/T-one.git
 miniaudio
 fastapi>=0.115,<1.0
 uvicorn[standard]>=0.30,<1.0

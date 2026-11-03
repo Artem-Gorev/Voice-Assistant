@@ -164,7 +164,12 @@ class CommandDispatcher:
         self.repo = event_repository
         self.search = semantic_search_service
         self.logger = logger
-        self.manager = EventManagementService(event_repository, collision_proc, logger)
+        self.manager = EventManagementService(
+            event_repository,
+            collision_proc,
+            logger,
+            semantic_search=semantic_search_service,
+        )
         self.session_id = "default"
 
         self.current_query: dict = {}

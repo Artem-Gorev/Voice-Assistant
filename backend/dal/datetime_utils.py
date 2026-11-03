@@ -1,5 +1,23 @@
-from datetime import date, time, datetime
+import os
+from datetime import date, time, datetime, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
+
+
+def get_app_timezone() -> ZoneInfo:
+    return ZoneInfo(os.getenv("APP_TIMEZONE", "Europe/Moscow"))
+
+
+def to_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=get_app_timezone())
+    return value.astimezone(timezone.utc)
+
+
+def to_local_naive(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(get_app_timezone()).replace(tzinfo=None)
 
 
 def _normalize_date(val: date | str | datetime | None) -> date | None:

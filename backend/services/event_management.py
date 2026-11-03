@@ -9,10 +9,11 @@ from backend.dal.nlp_utils import lemmatize_text
 
 
 class EventManagementService:
-    def __init__(self, repository, collision_processor, logger):
+    def __init__(self, repository, collision_processor, logger, semantic_search=None):
         self.repo = repository
         self.collision = collision_processor
         self.logger = logger
+        self.search = semantic_search
         self._last_ids: dict[str, list[int]] = {}
         self._pending: dict[str, dict[str, Any]] = {}
 
@@ -246,14 +247,36 @@ class EventManagementService:
 
         query = str(data.get("query") or "").casefold().replace("ё", "е").strip()
         if not query or query in {"её", "ее", "его", "это", "эту задачу", "эту встречу", "последнюю"}:
+            if data.get("target_date") or data.get("target_time"):
+                return self._filter_candidates(self.repo.get_all_events(), data)
             candidates = [event for identifier in self._last_ids.get(session_id, []) if (event := self.repo.get_event_by_id(identifier))]
             return self._filter_candidates(candidates, data)
 
         words = set(lemmatize_text(query.replace("ё", "е")).split()) - {"задача", "встреча", "событие", "по", "с", "и", "в", "на", "мне", "слушать"}
         if not words:
             return []
-        candidates = [event for event in self.repo.get_all_events() if words <= set(lemmatize_text(event["text"].replace("ё", "е")).split())]
-        return self._filter_candidates(candidates, data)
+        all_events = self.repo.get_all_events()
+        candidates = [
+            event for event in all_events
+            if words <= set(lemmatize_text(event["text"].replace("ё", "е")).split())
+        ]
+        candidates = self._filter_candidates(candidates, data)
+        if candidates or self.search is None:
+            return candidates
+
+        filtered_events = self._filter_candidates(all_events, data)
+        if not filtered_events:
+            return []
+        semantic_candidates = self.search.search_events_by_vector(
+            query,
+            filtered_events,
+            min_score=0.60,
+        )
+        self.logger.info(
+            "[SERVICES]: Для управления событием семантический поиск вернул %d кандидатов",
+            len(semantic_candidates),
+        )
+        return semantic_candidates
 
     @staticmethod
     def _filter_candidates(events: list[dict[str, Any]], data: dict[str, Any]) -> list[dict[str, Any]]:
