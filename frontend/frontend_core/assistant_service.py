@@ -2,7 +2,7 @@ import base64
 import logging
 import re
 import threading
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 
 import reflex as rx
 
