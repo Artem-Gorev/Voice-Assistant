@@ -10,6 +10,7 @@ if str(PROJECT_ROOT) not in sys.path:
 config = rx.Config(
     app_name="voice_assistant",
     app_module_import="app",
+    vite_allowed_hosts=["washhouse-angles-sepia.ngrok-free.dev"],
     frontend_packages=[
         "@tailwindcss/postcss@4.3.0",
         "@tailwindcss/typography@0.5.20",

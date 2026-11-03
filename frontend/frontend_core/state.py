@@ -7,12 +7,19 @@ from datetime import date, datetime, timedelta
 import reflex as rx
 from reflex.config import get_config
 
+from backend.dal.datetime_utils import get_app_timezone
+
 from .assistant_service import (
     _assistant_is_ready,
     _play_audio_script,
     _preload_assistant,
+    _read_calendar_events,
     _process_text,
 )
+
+
+def _app_today() -> date:
+    return datetime.now(get_app_timezone()).date()
 
 
 class State(rx.State):
@@ -32,17 +39,18 @@ class State(rx.State):
     is_recording: bool = False
     is_processing: bool = False
 
-    current_month: int = datetime.now().month
+    current_month: int = _app_today().month
 
-    current_year: int = datetime.now().year
+    current_year: int = _app_today().year
 
-    modal_month: int = datetime.now().month
+    modal_month: int = _app_today().month
 
-    modal_year: int = datetime.now().year
-    full_month: int = datetime.now().month
-    full_year: int = datetime.now().year
+    modal_year: int = _app_today().year
+    full_month: int = _app_today().month
+    full_year: int = _app_today().year
 
-    today: str = str(datetime.now().day)
+    today: str = str(_app_today().day)
+    calendar_today_iso: str = _app_today().isoformat()
 
     @rx.var
     def month_name(self) -> str:
@@ -203,9 +211,19 @@ class State(rx.State):
     @rx.event(background=True)
     async def initialize_app(self):
         async with self:
+            today = _app_today()
+            self.current_month, self.current_year = today.month, today.year
+            self.modal_month, self.modal_year = today.month, today.year
+            self.full_month, self.full_year = today.month, today.year
+            self.today = str(today.day)
+            self.calendar_today_iso = today.isoformat()
+            self.selected_date_iso = today.isoformat()
+            self.selected_day = str(today.day)
+            self.week_offset = 0
             self.models_ready = False
             self.calendar_events = []
             self.messages = []
+            self.voice_output = False
             self.startup_status = "Загружаю модели ассистента..."
         try:
             events = await asyncio.to_thread(_preload_assistant)
@@ -219,6 +237,31 @@ class State(rx.State):
             self.models_ready = _assistant_is_ready()
             self.startup_status = status
 
+    @rx.event(background=True)
+    async def refresh_calendar_date(self):
+        async with self:
+            today = _app_today()
+            previous_today = date.fromisoformat(self.calendar_today_iso)
+            self.today = str(today.day)
+            if (self.current_month, self.current_year) == (previous_today.month, previous_today.year):
+                self.current_month, self.current_year = today.month, today.year
+            if (self.full_month, self.full_year) == (previous_today.month, previous_today.year):
+                self.full_month, self.full_year = today.month, today.year
+            if (self.modal_month, self.modal_year) == (previous_today.month, previous_today.year):
+                self.modal_month, self.modal_year = today.month, today.year
+            if self.selected_date_iso == previous_today.isoformat():
+                self.selected_date_iso = today.isoformat()
+                self.selected_day = str(today.day)
+            self.calendar_today_iso = today.isoformat()
+            if self.week_offset == 0:
+                self.selected_day = str(today.day)
+        try:
+            events = await asyncio.to_thread(_read_calendar_events)
+        except Exception:
+            return
+        async with self:
+            self.calendar_events = events
+
     def toggle_voice_output(self):
         self.voice_output = not self.voice_output
         enabled = "true" if self.voice_output else "false"
@@ -227,7 +270,20 @@ class State(rx.State):
             script += "const C=window.AudioContext||window.webkitAudioContext; " \
                       "window.__assistantAudioContext=window.__assistantAudioContext||new C(); " \
                       "window.__assistantAudioContext.resume();"
+        else:
+            script += "try{window.__assistantAudioSource?.stop();}catch(_){} " \
+                      "window.__assistantAudioSource=null; " \
+                      "window.__assistantAudioContext?.suspend();"
         return rx.call_script(script)
+
+    def reset_voice_output(self):
+        self.voice_output = False
+        return rx.call_script(
+            "window.__voiceOutputEnabled=false; "
+            "try{window.__assistantAudioSource?.stop();}catch(_){} "
+            "window.__assistantAudioSource=null; "
+            "window.__assistantAudioContext?.suspend();"
+        )
 
     @rx.event(background=True)
     async def send_message(self):
@@ -356,21 +412,35 @@ class State(rx.State):
                         if (!event.data || !event.data.size) return;
                         window.__voiceUploadQueue = window.__voiceUploadQueue.then(async () => {
                             if (window.__voiceUploadError) return;
-                            const response = await fetch(
-                                window.__voiceAudioApiBase + "/audio/chunk/" + recordingId,
-                                {
-                                    method: "POST",
-                                    headers: { "Content-Type": "application/octet-stream" },
-                                    body: event.data
+                            const maxChunkBytes = 16 * 1024;
+                            for (let offset = 0; offset < event.data.size; offset += maxChunkBytes) {
+                                const end = Math.min(offset + maxChunkBytes, event.data.size);
+                                const body = await event.data.slice(offset, end).arrayBuffer();
+                                const chunkController = new AbortController();
+                                const chunkTimeout = setTimeout(() => chunkController.abort(), 30000);
+                                try {
+                                    const response = await fetch(
+                                        window.__voiceAudioApiBase + "/audio/chunk/" + recordingId,
+                                        {
+                                            method: "POST",
+                                            headers: { "Content-Type": "application/octet-stream" },
+                                            body,
+                                            signal: chunkController.signal
+                                        }
+                                    );
+                                    if (!response.ok) {
+                                        const detail = await response.text().catch(() => "");
+                                        throw new Error("Не удалось передать фрагмент аудио (HTTP " +
+                                            response.status + "): " + detail);
+                                    }
+                                } finally {
+                                    clearTimeout(chunkTimeout);
                                 }
-                            );
-                            if (!response.ok) {
-                                const detail = await response.text().catch(() => "");
-                                throw new Error("Не удалось передать фрагмент аудио (HTTP " +
-                                    response.status + "): " + detail);
                             }
                         }).catch(error => {
-                            window.__voiceUploadError = error.message || String(error);
+                            window.__voiceUploadError = error?.name === "AbortError"
+                                ? "Сервер не принял аудиофрагмент за 30 секунд."
+                                : (error.message || String(error));
                             console.error("Audio chunk upload failed:", error);
                         });
                     };
@@ -427,7 +497,7 @@ class State(rx.State):
                     };
                     if (window.__voiceAnalyser) animateWave();
 
-                    recorder.start(5000);
+                    recorder.start(1000);
                     return true;
                 } catch (error) {
                     console.error("Не удалось начать запись:", error);
@@ -564,26 +634,36 @@ class State(rx.State):
                             window.__voiceUploadError);
                     }
 
-                    const response = await fetch(
-                        window.__voiceAudioApiBase + "/audio/finish/" + recordingId,
-                        {
-                            method: "POST",
-                            headers: {
-                                "Accept": "application/json",
-                                "X-Reflex-Client-Token": window.__voiceClientToken || "",
-                                "X-Voice-Output": window.__voiceOutputEnabled ? "true" : "false"
+                    const finishController = new AbortController();
+                    const finishTimeout = setTimeout(() => finishController.abort(), 120000);
+                    try {
+                        const response = await fetch(
+                            window.__voiceAudioApiBase + "/audio/finish/" + recordingId,
+                            {
+                                method: "POST",
+                                headers: {
+                                    "Accept": "application/json",
+                                    "X-Reflex-Client-Token": window.__voiceClientToken || "",
+                                    "X-Voice-Output": window.__voiceOutputEnabled ? "true" : "false"
+                                },
+                                signal: finishController.signal
                             }
+                        );
+                        if (!response.ok) {
+                            const detail = await response.text().catch(() => "");
+                            throw new Error("Не удалось обработать аудио (HTTP " +
+                                response.status + "): " + detail);
                         }
-                    );
-                    if (!response.ok) {
-                        const detail = await response.text().catch(() => "");
-                        throw new Error("Не удалось обработать аудио (HTTP " +
-                            response.status + "): " + detail);
+                        saved = await response.json();
+                        return JSON.stringify(saved);
+                    } finally {
+                        clearTimeout(finishTimeout);
                     }
-                    saved = await response.json();
-                    return JSON.stringify(saved);
                 } catch (error) {
-                    return JSON.stringify({ok: false, error: error?.message || String(error)});
+                    const message = error?.name === "AbortError"
+                        ? "Сервер не ответил за 2 минуты. Проверьте журналы voice-assistant и попробуйте ещё раз."
+                        : (error?.message || String(error));
+                    return JSON.stringify({ok: false, error: message});
                 } finally {
                     if (!saved && recordingId && window.__voiceAudioApiBase) {
                         fetch(window.__voiceAudioApiBase + "/audio/cancel/" + recordingId, {
@@ -635,7 +715,7 @@ class State(rx.State):
     def set_calendar_mode(self, mode: str):
         if self.calendar_mode != mode:
             self.week_offset = 0
-            today = date.today()
+            today = _app_today()
             self.full_month, self.full_year = today.month, today.year
         self.calendar_mode = mode
 
@@ -648,7 +728,7 @@ class State(rx.State):
         self.week_offset += 1
 
     def go_to_current_week(self):
-        today = date.today()
+        today = _app_today()
         self.week_offset = 0
         self.full_month = today.month
         self.full_year = today.year
@@ -657,7 +737,7 @@ class State(rx.State):
 
     @rx.var
     def week_days_data(self) -> list[dict]:
-        today = date.today()
+        today = _app_today()
         monday = today - timedelta(days=today.weekday()) + timedelta(days=self.week_offset * 7)
         names = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
         result = []
@@ -677,7 +757,7 @@ class State(rx.State):
     @rx.var
     def week_range_label(self) -> str:
 
-        today = date.today()
+        today = _app_today()
 
         monday = today - timedelta(days=today.weekday()) + timedelta(days=self.week_offset * 7)
 
@@ -691,14 +771,14 @@ class State(rx.State):
 
     week_offset: int = 0
 
-    selected_date_iso: str = date.today().isoformat()
+    selected_date_iso: str = _app_today().isoformat()
 
     @rx.var
     def selected_date_label(self) -> str:
         try:
             chosen = date.fromisoformat(self.selected_date_iso)
         except (TypeError, ValueError):
-            chosen = date.today()
+            chosen = _app_today()
         months = ["января", "февраля", "марта", "апреля", "мая", "июня",
                   "июля", "августа", "сентября", "октября", "ноября", "декабря"]
         return f"{chosen.day} {months[chosen.month - 1]} {chosen.year}"
@@ -725,7 +805,7 @@ class State(rx.State):
 
     @rx.var
     def upcoming_events(self) -> list[dict]:
-        now = datetime.now().astimezone()
+        now = datetime.now(get_app_timezone())
         upcoming = []
         for event in self.calendar_events:
             if not event.get("active", True):
@@ -749,7 +829,7 @@ class State(rx.State):
         self.selected_date_iso = chosen.isoformat()
 
     def show_chat(self):
-        today = date.today()
+        today = _app_today()
         self.current_month, self.current_year = today.month, today.year
         self.modal_month, self.modal_year = today.month, today.year
         self.today = str(today.day)
@@ -759,7 +839,7 @@ class State(rx.State):
         self.active_view = "chat"
 
     def show_calendar(self):
-        today = date.today()
+        today = _app_today()
         self.full_month, self.full_year = today.month, today.year
         self.week_offset = 0
         self.selected_date_iso = today.isoformat()

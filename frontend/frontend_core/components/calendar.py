@@ -1,5 +1,3 @@
-from datetime import datetime
-
 import reflex as rx
 
 from ..state import State
@@ -37,9 +35,9 @@ def calendar_grid(days, selectable=False, compact=False):
 
                     rx.cond(
 
-                        (shown_month == datetime.now().month) &
+                        (shown_month == State.current_month) &
 
-                        (shown_year == datetime.now().year) &
+                        (shown_year == State.current_year) &
 
                         (day == State.today),
 
@@ -61,9 +59,9 @@ def calendar_grid(days, selectable=False, compact=False):
 
                     rx.cond(
 
-                        (shown_month == datetime.now().month) &
+                        (shown_month == State.current_month) &
 
-                        (shown_year == datetime.now().year) &
+                        (shown_year == State.current_year) &
 
                         (day == State.today),
 
@@ -288,7 +286,8 @@ def week_view():
                                         rx.text(event["time"], font_size="10px"),
                                         spacing="1", align="start",
                                     ),
-                                    position="absolute", top=event["top"], left="3px", right="3px",
+                                    position="absolute", top=event["top"], left=event["week_left"],
+                                    right=event["week_right"], box_sizing="border-box",
                                     height=event["height"], min_height="30px", overflow="hidden",
                                     background=rx.cond(
                                         event["active"].to(bool),

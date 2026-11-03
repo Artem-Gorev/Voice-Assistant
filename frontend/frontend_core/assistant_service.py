@@ -2,11 +2,12 @@ import base64
 import logging
 import re
 import threading
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 
 import reflex as rx
 
 from backend.audio.audio_handler import decode_audio_bytes
+from backend.dal.datetime_utils import get_app_timezone
 from backend.text_normalizer import normalize_text_for_speech
 
 _assistant_instance = None
@@ -30,20 +31,21 @@ def _get_assistant():
 
 
 def _serialize_events(rows: list[dict]) -> list[dict]:
+    app_timezone = get_app_timezone()
     values = []
     for row in rows:
         start = row.get("start_time")
         if not isinstance(start, datetime):
             continue
         if start.tzinfo is None:
-            start = start.replace(tzinfo=timezone.utc)
-        local_start = start.astimezone()
+            start = start.replace(tzinfo=app_timezone)
+        local_start = start.astimezone(app_timezone)
 
         end = row.get("end_time")
         if isinstance(end, datetime):
             if end.tzinfo is None:
-                end = end.replace(tzinfo=timezone.utc)
-            local_end = end.astimezone()
+                end = end.replace(tzinfo=app_timezone)
+            local_end = end.astimezone(app_timezone)
         else:
             local_end = local_start
 
@@ -52,7 +54,7 @@ def _serialize_events(rows: list[dict]) -> list[dict]:
         top = max(0, min((start_minute - 7 * 60) * 0.7, 14 * 60 * 0.7 - 30))
         height = max(30, min(duration * 0.7, 14 * 60 * 0.7 - top))
         event_date = local_start.date()
-        today = date.today()
+        today = datetime.now(app_timezone).date()
         if event_date == today:
             date_label = f"Сегодня · {local_start:%H:%M}"
         elif event_date == today + timedelta(days=1):
@@ -72,8 +74,63 @@ def _serialize_events(rows: list[dict]) -> list[dict]:
             "active": status.lower() not in {"completed", "cancelled", "canceled"},
             "top": f"{top:.0f}px",
             "height": f"{height:.0f}px",
+            "_top_px": top,
+            "_height_px": height,
+            "_start_minute": start_minute,
+            "_end_minute": max(start_minute + 30, local_end.hour * 60 + local_end.minute),
         })
-    return sorted(values, key=lambda event: event["sort_key"])
+    values = sorted(values, key=lambda event: event["sort_key"])
+    _assign_week_columns(values)
+    return values
+
+
+def _assign_week_columns(events: list[dict]) -> None:
+    by_date: dict[str, list[dict]] = {}
+    for event in events:
+        event["week_left"] = "3px"
+        event["week_right"] = "3px"
+        by_date.setdefault(event["date"], []).append(event)
+
+    for day_events in by_date.values():
+        ordered = sorted(
+            day_events,
+            key=lambda item: (item["_top_px"], item["_start_minute"], item["_end_minute"]),
+        )
+        cluster: list[dict] = []
+        cluster_end = -1.0
+        for event in ordered:
+            visual_end = event["_top_px"] + event["_height_px"] + 4
+            if cluster and event["_top_px"] >= cluster_end:
+                _layout_event_cluster(cluster)
+                cluster = []
+                cluster_end = -1.0
+            cluster.append(event)
+            cluster_end = max(cluster_end, visual_end)
+        if cluster:
+            _layout_event_cluster(cluster)
+
+
+def _layout_event_cluster(events: list[dict]) -> None:
+    lane_ends: list[float] = []
+    for event in events:
+        visual_start = event["_top_px"]
+        visual_end = visual_start + event["_height_px"] + 4
+        lane = next(
+            (index for index, end_position in enumerate(lane_ends)
+             if end_position <= visual_start),
+            len(lane_ends),
+        )
+        if lane == len(lane_ends):
+            lane_ends.append(visual_end)
+        else:
+            lane_ends[lane] = visual_end
+        event["_week_lane"] = lane
+
+    lane_count = max(1, len(lane_ends))
+    for event in events:
+        lane = event["_week_lane"]
+        event["week_left"] = f"calc({lane * 100 / lane_count:.4f}% + 3px)"
+        event["week_right"] = f"calc({(lane_count - lane - 1) * 100 / lane_count:.4f}% + 3px)"
 
 
 def _read_calendar_events(assistant=None) -> list[dict]:
@@ -108,13 +165,18 @@ def _play_audio_script(audio_data: str):
     if not audio_data:
         return None
     script = (
-        '(() => { const C = window.AudioContext || window.webkitAudioContext; '
+        '(() => { if (!window.__voiceOutputEnabled) return; '
+        'const C = window.AudioContext || window.webkitAudioContext; '
         'const context = window.__assistantAudioContext || new C(); '
         'window.__assistantAudioContext = context; '
         'fetch("data:audio/wav;base64,' + audio_data + '").then(r => r.arrayBuffer()) '
         '.then(data => context.resume().then(() => context.decodeAudioData(data))) '
-        '.then(buffer => { const source = context.createBufferSource(); source.buffer = buffer; '
-        'source.connect(context.destination); source.start(); }) '
+        '.then(buffer => { if (!window.__voiceOutputEnabled) return; '
+        'try { window.__assistantAudioSource?.stop(); } catch (_) {} '
+        'const source = context.createBufferSource(); window.__assistantAudioSource = source; '
+        'source.buffer = buffer; source.connect(context.destination); '
+        'source.onended = () => { if (window.__assistantAudioSource === source) '
+        'window.__assistantAudioSource = null; }; source.start(); }) '
         '.catch(error => console.error("Не удалось воспроизвести ответ:", error)); })()'
     )
     return rx.call_script(script)
@@ -141,12 +203,17 @@ def _process_audio(
     session_id: str,
     voice_output: bool,
 ) -> tuple[str, str, str, list[dict]]:
+    _assistant_logger.info("[VOICE]: Декодирование аудио (%d байт)", len(audio_bytes))
     samples = decode_audio_bytes(audio_bytes, sample_rate=8_000)
     with _assistant_lock:
         _require_assistant_ready()
         assistant = _get_assistant()
+        _assistant_logger.info("[VOICE]: Начинаю распознавание STT (%d отсчётов)", len(samples))
         transcript = assistant.process_input(samples, sample_rate=8_000)
+        _assistant_logger.info("[VOICE]: STT завершено, распознано %d символов", len(transcript))
+        _assistant_logger.info("[VOICE]: Начинаю обработку запроса ассистентом")
         answer = assistant.run(transcript, text_output=False, session_id=session_id)
+        _assistant_logger.info("[VOICE]: Обработка запроса завершена")
         audio_data = ""
         if voice_output:
             try:

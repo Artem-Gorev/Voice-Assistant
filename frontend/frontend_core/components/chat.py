@@ -89,7 +89,21 @@ def chat_view():
 
                     rx.hstack(
                         rx.button(
-                            rx.icon(tag=rx.cond(State.voice_output, "volume-2", "volume-x"), size=18),
+                            rx.box(
+                                rx.icon(
+                                    tag="volume-2", size=18, position="absolute", inset="0",
+                                    margin="auto", opacity=rx.cond(State.voice_output, "1", "0"),
+                                    transform=rx.cond(State.voice_output, "scale(1)", "scale(0.72)"),
+                                    transition="opacity 160ms ease, transform 160ms ease",
+                                ),
+                                rx.icon(
+                                    tag="volume-x", size=18, position="absolute", inset="0",
+                                    margin="auto", opacity=rx.cond(State.voice_output, "0", "1"),
+                                    transform=rx.cond(State.voice_output, "scale(0.72)", "scale(1)"),
+                                    transition="opacity 160ms ease, transform 160ms ease",
+                                ),
+                                position="relative", width="18px", height="18px",
+                            ),
                             type="button", on_click=State.toggle_voice_output,
                             title=rx.cond(State.voice_output, "Отключить озвучивание", "Включить озвучивание"),
                             background=rx.cond(
@@ -167,7 +181,12 @@ def chat_view():
                                     font_size="12px", font_weight="700", font_family="monospace",
                                     color="#89a9ff", min_width="42px"),
                             rx.fragment()),
-                        rx.button(rx.icon(tag=rx.cond(State.is_recording, "send", "arrow-up"), size=19),
+                        rx.button(
+                                  rx.cond(
+                                      State.is_recording,
+                                      rx.icon(tag="send", size=19),
+                                      rx.icon(tag="arrow-up", size=19),
+                                  ),
                                   type="button",
                                   title=rx.cond(State.is_recording, "Отправить голосовое сообщение", "Отправить сообщение"),
                                   on_click=rx.cond(State.is_recording, State.stop_recording, State.send_message),
@@ -203,15 +222,24 @@ def chat_view():
                             rx.foreach(
                                 State.upcoming_events,
                                 lambda event: rx.hstack(
-                                    rx.icon(tag="calendar-days", color="#789df3", size=17),
+                                    rx.box(
+                                        rx.icon(tag="calendar-days", color="#789df3", size=17),
+                                        width="18px", min_width="18px", height="18px",
+                                        style={"display": "flex", "alignItems": "center",
+                                               "justifyContent": "center", "flexShrink": 0},
+                                    ),
                                     rx.vstack(
                                         rx.text(event["date_label"], font_size="11px",
                                                 color="light-dark(#71809c, #aab7d5)"),
                                         rx.text(event["title"], font_size="13px", font_weight="600",
-                                                color="light-dark(#34415a, #eff3ff)"),
-                                        spacing="0", align="start",
+                                                color="light-dark(#34415a, #eff3ff)", width="100%",
+                                                style={"whiteSpace": "nowrap", "overflow": "hidden",
+                                                       "textOverflow": "ellipsis"}),
+                                        spacing="0", align="start", width="100%", min_width="0",
+                                        style={"minWidth": 0, "flex": "1 1 0%"},
                                     ),
-                                    align="center", spacing="2", width="100%",
+                                    align="center", spacing="2", width="100%", min_width="0",
+                                    style={"minWidth": 0},
                                 ),
                             ),
                             width="100%", spacing="3",

@@ -1,4 +1,6 @@
 import reflex as rx
+from fastapi import FastAPI
+from backend.dal.datetime_utils import get_app_timezone
 
 if __package__:
     from .frontend_core.audio_api import audio_api_transformer
@@ -15,6 +17,8 @@ else:
 
 
 def index() -> rx.Component:
+
+    app_timezone = get_app_timezone().key
 
     return rx.box(
 
@@ -66,6 +70,9 @@ def index() -> rx.Component:
 
             rx.cond(State.active_view == "chat", chat_view(), calendar_view()),
 
+            rx.button("", id="refresh-calendar-date", on_click=State.refresh_calendar_date,
+                      display="none"),
+
             width="100%", height="100%", min_height="0", max_width="1180px", padding="12px",
 
             align="stretch", spacing="2", margin="0 auto",
@@ -81,25 +88,45 @@ def index() -> rx.Component:
         color="light-dark(#253047, #f2f5ff)",
 
         style={**style, "colorScheme": "light dark", "backgroundAttachment": "fixed"},
-        on_mount=[State.initialize_app, rx.call_script(r"""
-            (() => {
+        on_mount=[State.reset_voice_output, State.initialize_app, rx.call_script(f"""
+            (() => {{
                 if (window.__gorkyClockTimer) clearInterval(window.__gorkyClockTimer);
-                const updateGorkyClock = () => {
+                if (window.__gorkyDateTimer) clearInterval(window.__gorkyDateTimer);
+                const appTimezone = {app_timezone!r};
+                const appDateKey = () => {{
+                    const parts = new Intl.DateTimeFormat("en-CA", {{
+                        timeZone: appTimezone, year: "numeric", month: "2-digit", day: "2-digit"
+                    }}).formatToParts(new Date());
+                    const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+                    return `${{values.year}}-${{values.month}}-${{values.day}}`;
+                }};
+                let lastDateKey = appDateKey();
+                window.__gorkyDateTimer = setInterval(() => {{
+                    const currentDateKey = appDateKey();
+                    if (currentDateKey !== lastDateKey) {{
+                        lastDateKey = currentDateKey;
+                        document.getElementById("refresh-calendar-date")?.click();
+                    }}
+                }}, 30000);
+                const updateGorkyClock = () => {{
                     const now = new Date();
                     const line = document.getElementById("aura-current-time-line");
-                    if (line) {
+                    if (line) {{
                         const minutes = Math.max(0, Math.min(14 * 60,
                             now.getHours() * 60 + now.getMinutes() - 7 * 60));
                         line.style.top = (minutes * 0.7 + 4) + "px";
-                    }
-                };
+                    }}
+                }};
                 updateGorkyClock();
                 window.__gorkyClockTimer = setInterval(updateGorkyClock, 1000);
-            })();
+            }})();
         """)],
 
     )
 
 
-app = rx.App(api_transformer=audio_api_transformer)
+audio_api = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+audio_api_transformer(audio_api)
+
+app = rx.App(api_transformer=audio_api)
 app.add_page(index)
